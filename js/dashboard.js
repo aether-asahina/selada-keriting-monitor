@@ -18,12 +18,17 @@
         isValidCameraHost: raw => String(raw || '').trim()
     };
 
-    // Nav Pages Definition (7 Tabs)
+    // Nav Pages Definition (12 Professional Navigation Tabs)
     const PAGES = [
-        { id: 'ringkasan', name: 'Ringkasan', sub: 'Kondisi mikroklimat kebun selada saat ini', ic: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>' },
+        { id: 'ringkasan', name: 'Dashboard', sub: 'Kondisi mikroklimat kebun selada saat ini', ic: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>' },
+        { id: 'greenhouse', name: 'Greenhouse', sub: 'Spesifikasi bedengan & tata letak fasilitas hidroponik', ic: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' },
         { id: 'sensor', name: 'Sensor', sub: 'Detail dan tren tiap sensor secara mendalam', ic: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
         { id: 'kamera', name: 'Kamera', sub: 'Pantau tanaman langsung dari ESP32-CAM', ic: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>' },
+        { id: 'pertumbuhan-daun', name: 'Pertumbuhan Daun', sub: 'Siklus 42 hari, segmentasi ExG & pengukuran kanopi', ic: '<path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="M12 6v6l4 2"/>' },
         { id: 'riwayat', name: 'Riwayat', sub: 'Semua pembacaan telemetri yang diterima sesi ini', ic: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+        { id: 'analisis-tanaman', name: 'Analisis Tanaman', sub: 'Fisiologi tanaman, Tetens VPD & model termal GDD', ic: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
+        { id: 'ai-assistant', name: 'AI Assistant', sub: 'Sistem pakar agronomi & asisten percakapan cerdas', ic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>' },
+        { id: 'otomasi', name: 'Otomasi', sub: 'Logika histeresis SCADA & setpoint irigasi presisi', ic: '<path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
         { id: 'peringatan', name: 'Peringatan', sub: 'Aturan otomatis dan kejadian yang terdeteksi', ic: '<path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21a2 2 0 0 0 4 0"/>' },
         { id: 'pengaturan', name: 'Pengaturan', sub: 'Koneksi Firebase, kalibrasi batas, dan tampilan', ic: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>' },
         { id: 'panduan', name: 'Panduan', sub: 'Pemasangan ESP32, pinout, dan pemecahan masalah', ic: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>' }
@@ -97,10 +102,41 @@
 
             window.FirebaseEdgeClient.start();
 
+            // Subscribe to Leaf Growth Store updates
+            if (window.GrowthStore) {
+                window.GrowthStore.subscribe(() => {
+                    if (this.activePage === 'ringkasan' || this.activePage === 'pertumbuhan-daun') {
+                        this.renderAllViews();
+                    }
+                });
+            }
+
+            // Responsive ResizeObserver for telemetry chart containment
+            const chartWrap = $('#chartSvgWrap');
+            if (chartWrap && typeof ResizeObserver !== 'undefined') {
+                let resizeDebounce = null;
+                const ro = new ResizeObserver(() => {
+                    clearTimeout(resizeDebounce);
+                    resizeDebounce = setTimeout(() => {
+                        if (this.activePage === 'ringkasan') this.renderOverviewChart();
+                    }, 50);
+                });
+                ro.observe(chartWrap);
+            }
+
             // Periodic offline check with tracked timer
             this.offlineTimer = setInterval(() => this.checkDeviceOffline(), 3000);
 
             console.log('[DashboardController] Hardened dashboard controller operational.');
+        }
+
+        calculateTetensVPD(tempC, humidityPct) {
+            if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return 0.75;
+            const validT = Math.max(0, Math.min(50, tempC));
+            const validRH = Math.max(5, Math.min(100, humidityPct));
+            const svp = 0.61078 * Math.exp((17.27 * validT) / (validT + 237.3));
+            const avp = svp * (validRH / 100);
+            return Math.max(0, Number((svp - avp).toFixed(3)));
         }
 
         // ================= ROUTING & NAVIGATION =================
@@ -119,7 +155,8 @@
 
         initRouter() {
             const handleHash = () => {
-                const hash = (location.hash || '#ringkasan').replace(/^#/, '');
+                let hash = (location.hash || '#ringkasan').replace(/^#/, '');
+                if (hash === 'dashboard') hash = 'ringkasan';
                 const found = PAGES.some(p => p.id === hash);
                 this.switchPage(found ? hash : 'ringkasan');
             };
@@ -156,13 +193,22 @@
 
             this.closeMobileSidebar();
             this.renderAllViews();
+
+            if (pageId === 'pertumbuhan-daun' && window.GrowthStore) {
+                window.GrowthStore.renderPertumbuhanDaunPage();
+            }
+            if (pageId === 'ai-assistant' && window.AIAssistant) {
+                window.AIAssistant.renderThread('aiChatThreadPage');
+            }
         }
 
         closeMobileSidebar() {
             const sidebar = $('#sidebar');
             const overlay = $('#sidebarOverlay');
+            const backdrop = $('#mobileBackdrop');
             if (sidebar) sidebar.classList.remove('open');
             if (overlay) overlay.style.display = 'none';
+            if (backdrop) backdrop.classList.remove('open');
         }
 
         // ================= EVENT BINDINGS =================
@@ -171,15 +217,59 @@
             const sideclose = $('#sideclose');
             const sidebar = $('#sidebar');
             const overlay = $('#sidebarOverlay');
+            const backdrop = $('#mobileBackdrop');
 
             const openMenu = () => {
                 if (sidebar) sidebar.classList.add('open');
                 if (overlay) overlay.style.display = 'block';
+                if (backdrop) backdrop.classList.add('open');
             };
 
             if (menuToggle) menuToggle.addEventListener('click', openMenu);
             if (sideclose) sideclose.addEventListener('click', () => this.closeMobileSidebar());
             if (overlay) overlay.addEventListener('click', () => this.closeMobileSidebar());
+            if (backdrop) backdrop.addEventListener('click', () => this.closeMobileSidebar());
+
+            // Reconnect button on Dashboard Camera panel
+            const btnDashCamReconnect = $('#btnDashCamReconnect');
+            if (btnDashCamReconnect) {
+                btnDashCamReconnect.addEventListener('click', () => {
+                    const S = window.ConfigStore.get();
+                    if (S.camIp) {
+                        this.toast(`Menyambungkan ulang ke ESP32-CAM (${S.camIp})...`, 'blue');
+                        this.startCamera();
+                    } else {
+                        this.toast('IP ESP32-CAM belum diatur. Silakan atur di tab Kamera.', 'amber');
+                    }
+                });
+            }
+
+            // Dedicated AI Assistant page bindings
+            const btnDiagPage = $('#btnDiagnoseAIPage');
+            const btnSendPage = $('#btnSendQueryPage');
+            const aiInputPage = $('#aiChatInputPage');
+
+            if (btnDiagPage) {
+                btnDiagPage.addEventListener('click', () => {
+                    const latest = window.DatasetStore.getLatest();
+                    window.AIAssistant.diagnoseCurrentConditions(latest);
+                    window.AIAssistant.renderThread('aiChatThreadPage');
+                    this.toast('Diagnosa agronomi real-time selesai.', 'emerald');
+                });
+            }
+
+            const sendAIPage = () => {
+                if (!aiInputPage) return;
+                const text = aiInputPage.value.trim();
+                if (!text) return;
+                aiInputPage.value = '';
+                const latest = window.DatasetStore.getLatest();
+                window.AIAssistant.query(text, latest);
+                window.AIAssistant.renderThread('aiChatThreadPage');
+            };
+
+            if (btnSendPage) btnSendPage.addEventListener('click', sendAIPage);
+            if (aiInputPage) aiInputPage.addEventListener('keydown', e => { if (e.key === 'Enter') sendAIPage(); });
 
             // Metric & window selector buttons
             $$('[data-chart-metric]').forEach(btn => {
@@ -1280,6 +1370,70 @@
             this.renderMiniSparkline('sparkSoil', 'tanah', record.tanah < S.dry ? '#f43f5e' : '#10b981');
             this.renderMiniSparkline('sparkAir', 'udara', '#3b82f6');
             this.renderMiniSparkline('sparkTemp', 'suhu', '#f59e0b');
+
+            // Update Tetens VPD across Dashboard and DSS
+            const vpdVal = this.calculateTetensVPD(record.suhu, record.udara);
+            const plantHealthVpd = $('#plantHealthVPD');
+            if (plantHealthVpd) plantHealthVpd.textContent = `${vpdVal.toFixed(2)} kPa`;
+            const dssVpd = $('#dssVpdValue');
+            if (dssVpd) dssVpd.textContent = `${vpdVal.toFixed(2)} kPa`;
+
+            // Update Camera Status card & live badge
+            const valCam = $('#valCamStatus');
+            const badgeCam = $('#badgeCamStatus');
+            const dashCamBadge = $('#dashCamBadge');
+            const isCamActive = this.cam && this.cam.run;
+            if (valCam) valCam.textContent = isCamActive ? 'ONLINE' : 'SIAGA';
+            if (badgeCam) {
+                badgeCam.className = isCamActive ? 'metric-badge ok' : 'metric-badge';
+                badgeCam.textContent = isCamActive ? 'Feed Aktif' : 'Siaga / LAN';
+            }
+            if (dashCamBadge) {
+                dashCamBadge.className = isCamActive ? 'badge-tag emerald tabular-nums' : 'badge-tag amber tabular-nums';
+                dashCamBadge.textContent = isCamActive ? 'LIVE' : 'SIAGA';
+            }
+
+            // Update Leaf Growth Campaign Stats across Dashboard & Footer Bar
+            if (window.GrowthStore) {
+                const gStats = window.GrowthStore.getCampaignStats();
+                const valImg = $('#valImageTarget');
+                const badgeImg = $('#badgeImageProgress');
+                if (valImg) valImg.textContent = `${gStats.validCount} / ${gStats.targetValid}`;
+                if (badgeImg) badgeImg.textContent = `${gStats.targetPct}% Target`;
+
+                const sTot = $('#statTotalImages');
+                const sVal = $('#statValidImages');
+                const sFail = $('#statFailedImages');
+                const sPct = $('#statTargetPct');
+                if (sTot) sTot.textContent = gStats.totalCaptured;
+                if (sVal) sVal.textContent = gStats.validCount;
+                if (sFail) sFail.textContent = gStats.failedCount;
+                if (sPct) sPct.textContent = `${gStats.targetPct}%`;
+
+                if (gStats.latestRecord) {
+                    const wEl = $('#plantHealthWidth');
+                    const aEl = $('#plantHealthArea');
+                    if (wEl) wEl.textContent = `${gStats.latestRecord.leaf_width_px} px`;
+                    if (aEl) aEl.textContent = `${gStats.latestRecord.leaf_area_px} px²`;
+                }
+            }
+
+            // Update SCADA Otomasi Page Elements
+            const scadaCmd = $('#scadaPumpCommand');
+            const scadaAct = $('#scadaRelayActual');
+            if (scadaCmd) scadaCmd.textContent = pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF';
+            if (scadaAct) {
+                if (record.relayActual === true) {
+                    scadaAct.textContent = 'TERKONFIRMASI: AKTIF';
+                    scadaAct.style.color = 'var(--accent-emerald)';
+                } else if (record.relayActual === false) {
+                    scadaAct.textContent = 'TERKONFIRMASI: MATI';
+                    scadaAct.style.color = 'var(--text-muted)';
+                } else {
+                    scadaAct.textContent = 'BELUM TERHUBUNG';
+                    scadaAct.style.color = 'var(--text-muted)';
+                }
+            }
         }
 
         renderMiniSparkline(elementId, field, strokeColor) {
@@ -1375,9 +1529,39 @@
             const wrap = $('#chartSvgWrap');
             if (!wrap) return;
 
-            const allRecords = window.DatasetStore.getAll().filter(r => Number.isFinite(r.t));
-            if (allRecords.length < 2) {
-                wrap.innerHTML = `<div class="skeleton-shimmer" style="height:100%;"></div>`;
+            const metric = this.activeChartMetric;
+            const S = window.ConfigStore.get();
+            const conv = (S.unit === 'F' && metric === 'suhu') ? (v => (v * 9 / 5) + 32) : (v => v);
+            let unit = '%';
+            if (metric === 'suhu') unit = S.unit === 'F' ? '°F' : '°C';
+
+            const allRecords = window.DatasetStore.getAll().filter(r => Number.isFinite(r.t) && Number.isFinite(r[metric]));
+
+            if (allRecords.length === 0) {
+                wrap.innerHTML = `
+                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 12px;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                        <span>Menunggu paket telemetri pertama dari sensor…</span>
+                    </div>
+                `;
+                return;
+            }
+
+            const w = Math.max(120, wrap.clientWidth || 320);
+            const h = Math.max(120, wrap.clientHeight || 240);
+
+            if (allRecords.length === 1) {
+                const r = allRecords[0];
+                const val = conv(r[metric]);
+                const midY = h / 2;
+                wrap.innerHTML = `
+                    <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
+                        <line class="grid-line" x1="44" y1="${midY}" x2="${w - 24}" y2="${midY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
+                        <circle class="data-dot" cx="${w / 2}" cy="${midY}" r="6" />
+                        <text class="axis-text" x="${w / 2}" y="${midY - 12}" text-anchor="middle">${val.toFixed(1)}${unit} (${window.DatasetStore.formatTime(r.t, true)})</text>
+                        <text class="axis-text" x="${w / 2}" y="${h - 8}" text-anchor="middle">1 data poin terekam</text>
+                    </svg>
+                `;
                 return;
             }
 
@@ -1386,15 +1570,20 @@
             let rows = allRecords.filter(r => r.t >= minTime);
             if (rows.length < 2) rows = allRecords.slice(-40);
 
-            const S = window.ConfigStore.get();
-            const metric = this.activeChartMetric;
-            const w = wrap.clientWidth || 800;
-            const h = 240;
-            const pad = { top: 16, right: 24, bottom: 28, left: 44 };
+            // Decimate if too many records (> 300) to keep DOM rendering 60fps
+            if (rows.length > 300) {
+                const step = Math.ceil(rows.length / 200);
+                rows = rows.filter((_, idx) => idx % step === 0 || idx === rows.length - 1);
+            }
+
+            const isMobile = w < 480;
+            const pad = isMobile 
+                ? { top: 14, right: 14, bottom: 24, left: 36 } 
+                : { top: 16, right: 24, bottom: 28, left: 44 };
             const innerW = Math.max(20, w - pad.left - pad.right);
             const innerH = Math.max(20, h - pad.top - pad.bottom);
 
-            let yMin = 0, yMax = 100, unit = '%', band = null;
+            let yMin = 0, yMax = 100, band = null;
             if (metric === 'tanah') {
                 yMin = 40; yMax = 100; unit = '%';
                 band = [S.dry, S.wet];
@@ -1402,7 +1591,6 @@
                 yMin = 40; yMax = 100; unit = '%';
                 band = [60, 80];
             } else if (metric === 'suhu') {
-                const conv = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
                 const temps = rows.map(r => conv(r.suhu)).filter(v => Number.isFinite(v));
                 yMin = Math.floor(Math.min(...temps) - 2);
                 yMax = Math.ceil(Math.max(...temps) + 2);
@@ -1415,7 +1603,7 @@
             const timeSpan = Math.max(t1 - t0, 10000);
 
             const getX = t => pad.left + ((t - t0) / timeSpan) * innerW;
-            const getY = val => pad.top + (1 - (val - yMin) / (yMax - yMin)) * innerH;
+            const getY = val => pad.top + (1 - (val - yMin) / (Math.max(1, yMax - yMin))) * innerH;
 
             let gridHtml = '';
             for (let i = 0; i <= 4; i++) {
@@ -1423,7 +1611,7 @@
                 const y = getY(tickVal);
                 gridHtml += `
                     <line class="grid-line" x1="${pad.left}" y1="${y}" x2="${w - pad.right}" y2="${y}" />
-                    <text class="axis-text" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${Sec.escapeHTML(unit)}</text>
+                    <text class="axis-text" x="${pad.left - 6}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${Sec.escapeHTML(unit)}</text>
                 `;
             }
 
@@ -1447,14 +1635,13 @@
                 timeLabelsHtml += `<text class="axis-text" x="${x}" y="${h - 6}" text-anchor="${anchor}">${Sec.escapeHTML(window.DatasetStore.formatTime(tx, true))}</text>`;
             }
 
-            const conv = (S.unit === 'F' && metric === 'suhu') ? (v => (v * 9 / 5) + 32) : (v => v);
             const points = rows.map(r => [getX(r.t), getY(conv(r[metric]))]);
             const pathD = 'M' + points.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
             const areaD = `${pathD} L${points[points.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${points[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
             const lastPt = points[points.length - 1];
 
             wrap.innerHTML = `
-                <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden; width:100%; height:100%;">
                     <defs>
                         <linearGradient id="blueGradient" x1="0%" y1="0%" x2="0%" y2="100%">
                             <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.35" />

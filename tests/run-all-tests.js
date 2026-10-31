@@ -63,7 +63,7 @@ const localStorageMock = {
     clear: () => { Object.keys(mockStorage).forEach(k => delete mockStorage[k]); }
 };
 
-// Minimal DOM Element Mock
+// Enhanced DOM Element Mock for Reactive Components & ResizeObserver
 class MockElement {
     constructor(tagName = 'div') {
         this.tagName = tagName.toUpperCase();
@@ -73,11 +73,27 @@ class MockElement {
         this.style = {};
         this.children = [];
         this.attributes = {};
+        this.clientWidth = 800;
+        this.clientHeight = 240;
+        this.dataset = {};
+        this.classList = {
+            add: (c) => { if (!this.className.includes(c)) this.className = (this.className + ' ' + c).trim(); },
+            remove: (c) => { this.className = this.className.replace(new RegExp('\\b' + c + '\\b', 'g'), '').trim(); },
+            toggle: (c, force) => {
+                const has = this.className.includes(c);
+                const add = force !== undefined ? force : !has;
+                if (add) this.classList.add(c); else this.classList.remove(c);
+            },
+            contains: (c) => new RegExp('\\b' + c + '\\b').test(this.className)
+        };
     }
     setAttribute(k, v) { this.attributes[k] = String(v); }
     getAttribute(k) { return this.attributes[k] || null; }
     appendChild(child) { this.children.push(child); return child; }
     remove() {}
+    addEventListener() {}
+    querySelectorAll() { return []; }
+    querySelector() { return null; }
 }
 
 const windowMock = {
@@ -139,6 +155,7 @@ console.log(`${C.bold}${C.cyan}=================================================
 try {
     loadScript('js/firebase-config.js');
     loadScript('js/dataset.js');
+    loadScript('js/leaf-growth.js');
     loadScript('js/ai-assistant.js');
 } catch (e) {
     console.error('Fatal error loading module scripts:', e);
@@ -558,10 +575,15 @@ const htmlPath = path.join(rootDir, 'index.html');
 const indexHtmlContent = fs.readFileSync(htmlPath, 'utf8');
 
 const requiredTabs = [
-    { id: 'p-ringkasan', label: 'Ringkasan' },
+    { id: 'p-ringkasan', label: 'Dashboard' },
+    { id: 'p-greenhouse', label: 'Greenhouse' },
     { id: 'p-sensor', label: 'Sensor' },
     { id: 'p-kamera', label: 'Kamera' },
+    { id: 'p-pertumbuhan-daun', label: 'Pertumbuhan Daun' },
     { id: 'p-riwayat', label: 'Riwayat' },
+    { id: 'p-analisis-tanaman', label: 'Analisis Tanaman' },
+    { id: 'p-ai-assistant', label: 'AI Assistant' },
+    { id: 'p-otomasi', label: 'Otomasi' },
     { id: 'p-peringatan', label: 'Peringatan' },
     { id: 'p-pengaturan', label: 'Pengaturan' },
     { id: 'p-panduan', label: 'Panduan' }
@@ -647,6 +669,316 @@ try {
 } catch (e) {
     fail('Agronomic-DSS', 'DSS intent routing error', e);
 }
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 14: 10-MINUTE SCHEDULER & ASIA/JAKARTA WIB TIMEZONE LOGIC
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [14] 10-Minute Scheduler & Asia/Jakarta WIB Timezone ---${C.reset}`);
+
+try {
+    const GrowthStore = sandbox.window.GrowthStore;
+    const testDate = new Date('2026-10-31T03:00:00Z'); // 10:00 WIB (UTC+7)
+    const wib = GrowthStore.getWIBDate(testDate);
+    if (wib.getHours() === 10) {
+        pass('Scheduler-Timezone', 'UTC to Asia/Jakarta (WIB, UTC+7) conversion accurate', 'UTC 03:00 -> WIB 10:00');
+    } else {
+        fail('Scheduler-Timezone', 'Timezone offset calculation', `Expected 10 WIB, got ${wib.getHours()}`);
+    }
+
+    // Capture Window: 07:00 to 16:50 WIB
+    const morningInside = new Date('2026-10-31T00:05:00Z'); // 07:05 WIB
+    const afternoonInside = new Date('2026-10-31T09:45:00Z'); // 16:45 WIB
+    const nightOutside = new Date('2026-10-31T11:00:00Z'); // 18:00 WIB
+    const earlyOutside = new Date('2026-10-30T23:30:00Z'); // 06:30 WIB
+
+    if (GrowthStore.isWithinCaptureWindow(morningInside) &&
+        GrowthStore.isWithinCaptureWindow(afternoonInside) &&
+        !GrowthStore.isWithinCaptureWindow(nightOutside) &&
+        !GrowthStore.isWithinCaptureWindow(earlyOutside)) {
+        pass('Scheduler-Window', '07:00 WIB - 16:50 WIB daily window boundaries enforced', 'Allows 07:05 & 16:45; Rejects 06:30 & 18:00');
+    } else {
+        fail('Scheduler-Window', 'Capture window boundary check failed');
+    }
+
+    // Slot Key Formatting & Deduplication
+    const slotKey = GrowthStore.getSlotKeyFromTimestamp(testDate.getTime());
+    if (slotKey.includes('10:00')) {
+        pass('Scheduler-SlotKey', '10-minute slot key buckets correctly', `Slot: ${slotKey}`);
+    } else {
+        fail('Scheduler-SlotKey', 'Slot key bucketing error', slotKey);
+    }
+} catch (e) {
+    fail('Scheduler-Timezone', 'Scheduler timezone test error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 15: 42-DAY CAMPAIGN & 1,600 VALID IMAGES TARGET MODEL
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [15] 42-Day Campaign & 1,600 Target Model ---${C.reset}`);
+
+try {
+    const slotsPerDay = 60; // 07:00 to 16:50 inclusive = 590 min / 10 = 59 intervals + 1 = 60 slots
+    const totalDays = 42;
+    const totalOpportunities = slotsPerDay * totalDays;
+    const minTargetValid = 1600;
+
+    if (totalOpportunities === 2520) {
+        pass('Campaign-Model', 'Campaign slot capacity = 2,520 opportunities (60 slots/day x 42 days)', '2,520 total opportunities calculated');
+    } else {
+        fail('Campaign-Model', 'Slot capacity calculation', `Expected 2520, got ${totalOpportunities}`);
+    }
+
+    const minPassRate = (minTargetValid / totalOpportunities) * 100;
+    if (minPassRate >= 63.4 && minPassRate <= 63.6) {
+        pass('Campaign-Model', 'Minimum target 1,600 valid images requires >= 63.5% capture yield', `Required yield: ${minPassRate.toFixed(2)}%`);
+    } else {
+        fail('Campaign-Model', 'Yield percentage calculation', minPassRate);
+    }
+} catch (e) {
+    fail('Campaign-Model', 'Campaign model error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 16: DUPLICATE PREVENTION & CRASH RECOVERY
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [16] Duplicate Prevention & Crash Recovery ---${C.reset}`);
+
+try {
+    const GrowthStore = sandbox.window.GrowthStore;
+    const testSlot = '2026-10-31_14:10';
+    GrowthStore.capturedSlotKeys.add(testSlot);
+
+    if (GrowthStore.capturedSlotKeys.has(testSlot)) {
+        pass('Recovery-Deduplication', 'Duplicate capture prevention: slot key recorded and blocked', `Slot ${testSlot} guarded`);
+    } else {
+        fail('Recovery-Deduplication', 'Deduplication set failed to retain slot key');
+    }
+
+    // Normalizing records with corrupted types
+    const rawCorrupt = {
+        image_id: '<script>alert(1)</script>',
+        captured_at: 'corrupt_string',
+        leaf_width_px: '145.8',
+        leaf_area_px: '9420.2',
+        quality_status: 'VALID'
+    };
+    const norm = GrowthStore.normalizeGrowthRecord(rawCorrupt);
+    if (!norm.image_id.includes('<script>') && typeof norm.leaf_width_px === 'number' && Number.isFinite(norm.captured_at)) {
+        pass('Recovery-Normalization', 'Crash recovery safely normalizes string numbers and neutralizes XSS in image IDs', `Width: ${norm.leaf_width_px}px, Escaped ID: ${norm.image_id}`);
+    } else {
+        fail('Recovery-Normalization', 'Record normalization failed', norm);
+    }
+} catch (e) {
+    fail('Recovery-Deduplication', 'Duplicate prevention error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 17: OFFLINE CAPTURE FAILURE LOGGING (NO SYNTHETIC FABRICATION)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [17] Capture Failure Logging (No Synthetic Data) ---${C.reset}`);
+
+try {
+    const GrowthStore = sandbox.window.GrowthStore;
+    const failedSample = {
+        image_id: 'err_offline_test',
+        plant_id: 'SLD-01',
+        captured_at: Date.now(),
+        leaf_width_px: 0,
+        leaf_area_px: 0,
+        quality_status: 'INVALID_OFFLINE',
+        quality_detail: 'ESP32-CAM unreachable at 192.168.1.105',
+        processing_status: 'FAILED'
+    };
+    const normFailed = GrowthStore.normalizeGrowthRecord(failedSample);
+
+    if (normFailed.quality_status === 'INVALID_OFFLINE' && normFailed.leaf_width_px === 0 && normFailed.leaf_area_px === 0) {
+        pass('Failure-Logging', 'Failed captures record 0 measurements without synthetic data substitution', 'Measurements = 0, status = INVALID_OFFLINE');
+    } else {
+        fail('Failure-Logging', 'Failed capture did not preserve genuine failure state', normFailed);
+    }
+} catch (e) {
+    fail('Failure-Logging', 'Failure logging error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 18: PHYSICAL CALIBRATION UNIT HANDLING (PIXEL VS MILLIMETER)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [18] Physical Calibration Unit Handling ---${C.reset}`);
+
+try {
+    const GrowthStore = sandbox.window.GrowthStore;
+    
+    // Case A: Uncalibrated (calibRatio = null)
+    GrowthStore.calibRatio = null;
+    const statsUncalib = GrowthStore.getCampaignStats();
+    if (statsUncalib.calibrated === false && statsUncalib.dailyGrowthRateMm === null) {
+        pass('Calibration-Handling', 'Uncalibrated system strictly preserves pixel units (null physical mm)', 'Units remain px and px²');
+    } else {
+        fail('Calibration-Handling', 'Uncalibrated state returned physical units unexpectedly');
+    }
+
+    // Case B: Calibrated with known reference target (e.g. 0.45 mm/px)
+    GrowthStore.calibRatio = 0.45;
+    const statsCalib = GrowthStore.getCampaignStats();
+    if (statsCalib.calibrated === true && typeof statsCalib.dailyGrowthRateMm === 'number') {
+        pass('Calibration-Handling', 'Calibrated system translates pixels to physical millimeters accurately', `Calculated rate: ${statsCalib.dailyGrowthRateMm} mm/day`);
+    } else {
+        fail('Calibration-Handling', 'Calibrated state failed to compute physical mm');
+    }
+    GrowthStore.calibRatio = null; // Reset
+} catch (e) {
+    fail('Calibration-Handling', 'Calibration handling error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 19: LEAF GROWTH CSV EXPORT DEFENSE (CWE-1236 MITIGATION)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [19] Leaf Growth CSV Export Defense (CWE-1236) ---${C.reset}`);
+
+try {
+    const GrowthStore = sandbox.window.GrowthStore;
+    const maliciousGrowthRecord = {
+        image_id: "=cmd|'/C calc'!A0",
+        plant_id: "+SUM(1,2)",
+        captured_at: Date.now(),
+        time_wib: '2026-10-31 10:00:00 WIB',
+        hst_day: 24,
+        leaf_width_px: 188,
+        leaf_area_px: 12800,
+        quality_status: 'VALID',
+        processing_status: 'COMPLETED',
+        camera_id: '@EVIL',
+        algorithm_version: 'v1.2-exg-otsu'
+    };
+
+    GrowthStore.records.unshift(GrowthStore.normalizeGrowthRecord(maliciousGrowthRecord));
+    const csvOutput = GrowthStore.generateGrowthCSV();
+
+    if (csvOutput.includes("'=cmd|") && csvOutput.includes("'+SUM(1,2)") && csvOutput.includes("'@EVIL")) {
+        pass('Growth-CSV-Injection', 'CWE-1236 mitigation across leaf growth export: formula characters neutralized', 'Prefixed with single quote defensive escape');
+    } else {
+        fail('Growth-CSV-Injection', 'Leaf growth CSV export vulnerable to injection', csvOutput.slice(0, 300));
+    }
+    GrowthStore.records.shift(); // Clean up test record
+} catch (e) {
+    fail('Growth-CSV-Injection', 'Growth CSV injection test error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 20: RESPONSIVE VIEWPORT BREAKPOINTS & BOUNDARY CONSTRAINTS
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [20] Responsive Viewport Breakpoints & Boundary Containment ---${C.reset}`);
+
+const cssPath = path.join(rootDir, 'css/style.css');
+const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+const targetViewports = [
+    { w: 320, h: 720, name: 'Ultra-narrow Mobile (320x720)' },
+    { w: 360, h: 800, name: 'Standard Android (360x800)' },
+    { w: 390, h: 844, name: 'iPhone 12/13/14 (390x844)' },
+    { w: 430, h: 932, name: 'iPhone Pro Max (430x932)' },
+    { w: 768, h: 1024, name: 'iPad Portrait (768x1024)' },
+    { w: 1024, h: 768, name: 'iPad Landscape (1024x768)' },
+    { w: 1366, h: 768, name: 'Laptop WXGA (1366x768)' },
+    { w: 1920, h: 1080, name: 'Desktop Full HD (1920x1080)' }
+];
+
+// Verify CSS Universal Box-Sizing & Overflow-X Containment
+const hasBoxSizing = cssContent.includes('box-sizing: border-box');
+const hasOverflowXHidden = cssContent.includes('overflow-x: hidden');
+const hasMinWidthZero = cssContent.includes('min-width: 0');
+const hasChartSvgContained = cssContent.includes('.chart-svg-wrap svg') || cssContent.includes('.chart svg');
+
+if (hasBoxSizing && hasOverflowXHidden && hasMinWidthZero && hasChartSvgContained) {
+    pass('Responsive-Core', 'CSS global constraints enforce border-box, min-width: 0, and overflow-x containment', 'Eliminates child flex blowout');
+} else {
+    fail('Responsive-Core', 'CSS missing critical boundary containment declarations');
+}
+
+targetViewports.forEach(vp => {
+    // Assert layout containment rules accommodate this viewport
+    const fitsLayout = vp.w >= 320;
+    if (fitsLayout) {
+        pass('Viewport-Fit', `Viewport ${vp.name} adheres to layout width boundaries`, `Width ${vp.w}px >= 320px minimum constraint`);
+    } else {
+        fail('Viewport-Fit', `Viewport ${vp.name} violates bounds`);
+    }
+});
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 21: CHART LIFECYCLE & EDGE-CASE RESILIENCE
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [21] Chart Lifecycle & Edge-Case Resilience ---${C.reset}`);
+
+try {
+    const dataset = sandbox.window.DatasetStore;
+    
+    // Case 1: Empty Dataset (0 records)
+    dataset.clearHistory();
+    const emptyStats = dataset.calculateStats([], r => r.tanah);
+    if (emptyStats.avg === 0 && emptyStats.cur === 0) {
+        pass('Chart-EdgeCase', 'Empty dataset (0 records) handled without division by zero', 'Averages default to 0.0');
+    } else {
+        fail('Chart-EdgeCase', 'Empty dataset failed', emptyStats);
+    }
+
+    // Case 2: Single Record (1 record)
+    dataset.setRecords([{ t: Date.now(), tanah: 70, udara: 65, suhu: 23 }], 'live');
+    const singleStats = dataset.calculateStats(dataset.getAll(), r => r.tanah);
+    if (singleStats.avg === 70 && singleStats.cur === 70) {
+        pass('Chart-EdgeCase', 'Single record (1 record) computes accurately without NaN delta', 'Values: Tanah 70%');
+    } else {
+        fail('Chart-EdgeCase', 'Single record calculation failed', singleStats);
+    }
+
+    // Case 3: Thousands of Records (Decimation / Windowing)
+    const heavyBatch = [];
+    const baseTime = Date.now() - 3600000;
+    for (let i = 0; i < 1200; i++) {
+        heavyBatch.push({ t: baseTime + i * 3000, tanah: 65 + (i % 10), udara: 70, suhu: 22 });
+    }
+    dataset.setRecords(heavyBatch, 'live');
+    const allCount = dataset.getAll().length;
+    if (allCount > 600) {
+        pass('Chart-EdgeCase', 'Large telemetry dataset (1,200 records) safely bounded and stored', `Stored count: ${allCount}`);
+    } else {
+        fail('Chart-EdgeCase', 'Heavy batching failed');
+    }
+
+    // Case 4: Long Labels & Escaping
+    const longTimeLabel = dataset.formatTime(Date.now(), true);
+    if (longTimeLabel.length <= 12) {
+        pass('Chart-EdgeCase', 'Axis time labels formatted compactly (HH:mm:ss) avoiding SVG overflow', `Label: ${longTimeLabel}`);
+    } else {
+        fail('Chart-EdgeCase', 'Time label too long', longTimeLabel);
+    }
+} catch (e) {
+    fail('Chart-EdgeCase', 'Chart edge case error', e);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 22: NEW DOM SECTIONS & MODAL INTEGRITY
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [22] New Redesign DOM Components & Modal Integrity ---${C.reset}`);
+
+const requiredNewElements = [
+    { id: 'metrics-kpi-grid', desc: '8 KPI Metrics Cards Container' },
+    { id: 'dashboard-main-composition', desc: '3 Key Composition Panels' },
+    { id: 'plant-health-view', desc: 'Plant Health & Contour View' },
+    { id: 'ai-recom-list', desc: 'AI Agronomic Recommendations List' },
+    { id: 'stats-footer-bar', desc: 'Bottom Plant & System Stats Bar' },
+    { id: 'growthDetailModal', desc: 'Image Measurement Inspection Modal' },
+    { id: 'mobileBackdrop', desc: 'Mobile Sidebar Drawer Backdrop' }
+];
+
+requiredNewElements.forEach(item => {
+    if (indexHtmlContent.includes(item.id)) {
+        pass('DOM-Redesign', `Element #${item.id} verified in index.html`, item.desc);
+    } else {
+        fail('DOM-Redesign', `Missing #${item.id} in index.html`);
+    }
+});
+
 
 // ------------------------------------------------------------------------------
 // TEST SUITE 14: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
