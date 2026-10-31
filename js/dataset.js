@@ -1,17 +1,23 @@
 /**
  * ==============================================================================
  * MODULE: DATASET STORE, HISTORY TABLE & STATISTICAL ENGINE
- * Handles historical records, zone distribution, column sorting, and CSV export
+ * Hardened for: CSV Formula Injection Defense, DOM XSS Sanitization, NaN Resilience
  * ==============================================================================
  */
 
 (function (window) {
     'use strict';
 
+    const Sec = window.SecurityUtils || {
+        escapeHTML: s => String(s || ''),
+        escapeCSV: s => String(s || '')
+    };
+
     class DatasetStore {
         constructor() {
             this.records = [];
             this.maxBufferSize = 3600;
+            this.currentSource = 'offline';
             this.H = {
                 page: 1,
                 per: 15,
@@ -23,9 +29,10 @@
             };
         }
 
-        setRecords(records) {
+        setRecords(records, source = 'offline') {
             if (Array.isArray(records)) {
                 this.records = records.slice(-this.maxBufferSize);
+                this.currentSource = source;
             }
         }
 
@@ -55,7 +62,7 @@
             this.H.page = 1;
         }
 
-        // Zone determination based on user configured dry & wet limits
+        // Zone determination based on configured dry and wet thresholds
         getZone(soilVal) {
             const S = window.ConfigStore ? window.ConfigStore.get() : { dry: 65, wet: 78 };
             if (soilVal < S.dry) return 'dry';
@@ -66,38 +73,49 @@
         getZoneLabel(z) {
             if (z === 'dry') return 'Kering';
             if (z === 'wet') return 'Basah';
-            return 'Normal';
+            return 'Optimal';
         }
 
         getZoneHint(z) {
             const S = window.ConfigStore ? window.ConfigStore.get() : { dry: 65, wet: 78 };
-            if (z === 'dry') return `Tanah kering (< ${S.dry}%). Pompa menyala otomatis.`;
+            if (z === 'dry') return `Tanah kering (< ${S.dry}%). Pompa otomatis diperintahkan menyala.`;
             if (z === 'ok') return `Dalam rentang optimal (${S.dry}–${S.wet}%). Pompa siaga.`;
             return `Tanah basah (> ${S.wet}%). Pompa mati untuk proteksi akar.`;
         }
 
-        // Compute percentage of time in each zone
         calculateZoneShare(rows) {
             if (!rows || rows.length === 0) return { dry: 0, ok: 100, wet: 0 };
             const counts = { dry: 0, ok: 0, wet: 0 };
+            let validCount = 0;
+
             for (const r of rows) {
-                const z = this.getZone(r.tanah);
-                counts[z]++;
+                if (Number.isFinite(r.tanah)) {
+                    const z = this.getZone(r.tanah);
+                    counts[z]++;
+                    validCount++;
+                }
             }
-            const total = rows.length;
+
+            if (validCount === 0) return { dry: 0, ok: 100, wet: 0 };
             return {
-                dry: Math.round((counts.dry / total) * 100),
-                ok: Math.round((counts.ok / total) * 100),
-                wet: Math.round((counts.wet / total) * 100)
+                dry: Math.round((counts.dry / validCount) * 100),
+                ok: Math.round((counts.ok / validCount) * 100),
+                wet: Math.round((counts.wet / validCount) * 100)
             };
         }
 
-        // Detailed statistical analysis for a numeric sensor field
+        // NaN-resilient statistical analysis
         calculateStats(rows, getter, threshold = 0.5) {
             if (!rows || rows.length === 0) {
                 return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'Stabil' };
             }
-            const vals = rows.map(getter);
+
+            // Filter out non-finite values to prevent NaN propagation
+            const vals = rows.map(getter).filter(v => Number.isFinite(v));
+            if (vals.length === 0) {
+                return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'Stabil' };
+            }
+
             const n = vals.length;
             const cur = vals[n - 1];
             const sum = vals.reduce((a, b) => a + b, 0);
@@ -119,15 +137,15 @@
         }
 
         generateStatHTML(st, unit, dec = 0) {
-            const fmt = (v) => Number(v).toFixed(dec);
+            const fmt = (v) => Number.isFinite(v) ? Number(v).toFixed(dec) : '0';
             const sign = (v) => (v > 0 ? '+' : '') + fmt(v);
 
             function item(label, val, sub) {
                 return `
                     <div class="stat">
-                        <span class="label">${label}</span>
-                        <b>${val}</b>
-                        <small>${sub || '&nbsp;'}</small>
+                        <span class="label">${Sec.escapeHTML(label)}</span>
+                        <b>${Sec.escapeHTML(val)}</b>
+                        <small>${Sec.escapeHTML(sub || '')}</small>
                     </div>
                 `;
             }
@@ -139,24 +157,24 @@
                 item('Tren', st.tr, st.tr === 'Stabil' ? 'Stabil' : `${sign(st.d)} ${unit}`);
         }
 
-        // Pump cycle calculations
         calculatePumpStats(rows) {
             const S = window.ConfigStore ? window.ConfigStore.get() : { dry: 65, wet: 78 };
             let cycles = 0, onMs = 0, prevDry = false;
 
             rows.forEach((r, i) => {
-                const d = r.tanah < S.dry;
-                if (d && !prevDry) cycles++;
-                if (i > 0 && prevDry) onMs += Math.min(r.t - rows[i - 1].t, 5000);
-                prevDry = d;
+                if (Number.isFinite(r.tanah)) {
+                    const d = r.tanah < S.dry;
+                    if (d && !prevDry) cycles++;
+                    if (i > 0 && prevDry) onMs += Math.min(r.t - rows[i - 1].t, 5000);
+                    prevDry = d;
+                }
             });
 
             return { cycles, onMs };
         }
 
-        // Filter and aggregate rows for History view
         getFilteredHistoryRows() {
-            let list = this.records.slice();
+            let list = this.records.filter(r => Number.isFinite(r.t));
             const now = Date.now();
 
             if (this.H.range > 0) {
@@ -177,12 +195,16 @@
                 }
                 list = Object.keys(buckets).sort().map(k => {
                     const group = buckets[k];
-                    const avg = key => group.reduce((a, b) => a + Number(b[key]), 0) / group.length;
+                    const avg = key => {
+                        const valid = group.map(x => Number(x[key])).filter(v => Number.isFinite(v));
+                        return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+                    };
                     return {
                         t: Number(k),
                         suhu: Number(avg('suhu').toFixed(1)),
                         udara: Math.round(avg('udara')),
                         tanah: Math.round(avg('tanah')),
+                        source: group[0] ? group[0].source : 'live',
                         id: 'agg_' + k
                     };
                 });
@@ -193,6 +215,8 @@
             const dir = this.H.dir;
             list.sort((a, b) => {
                 const va = a[k], vb = b[k];
+                if (!Number.isFinite(va)) return 1;
+                if (!Number.isFinite(vb)) return -1;
                 return va < vb ? -dir : (va > vb ? dir : 0);
             });
 
@@ -237,7 +261,7 @@
             const start = (this.H.page - 1) * this.H.per;
             const pageRows = rows.slice(start, start + this.H.per);
 
-            // Summary bar
+            // Summary stats bar
             if (hsum) {
                 const S = window.ConfigStore ? window.ConfigStore.get() : { unit: 'C' };
                 const tUnit = S.unit === 'F' ? '°F' : '°C';
@@ -250,33 +274,40 @@
                 hsum.innerHTML = `
                     <div class="stat"><span class="label">Total baris</span><b>${total}</b><small>sesuai filter</small></div>
                     <div class="stat"><span class="label">Rata-rata tanah</span><b>${tanahSt.avg.toFixed(0)}%</b><small>rentang ${tanahSt.min}–${tanahSt.max}%</small></div>
-                    <div class="stat"><span class="label">Rata-rata suhu</span><b>${suhuSt.avg.toFixed(1)}${tUnit}</b><small>rentang ${suhuSt.min.toFixed(1)}–${suhuSt.max.toFixed(1)}</small></div>
+                    <div class="stat"><span class="label">Rata-rata suhu</span><b>${suhuSt.avg.toFixed(1)}${Sec.escapeHTML(tUnit)}</b><small>rentang ${suhuSt.min.toFixed(1)}–${suhuSt.max.toFixed(1)}</small></div>
                     <div class="stat"><span class="label">Rata-rata udara</span><b>${udaraSt.avg.toFixed(0)}%</b><small>rentang ${udaraSt.min}–${udaraSt.max}%</small></div>
                 `;
             }
 
-            // Table rows
             if (pageRows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Tidak ada data yang cocok dengan filter saat ini.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Tidak ada data telemetri yang cocok dengan filter saat ini.</td></tr>`;
             } else {
                 tbody.innerHTML = pageRows.map(r => {
                     const z = this.getZone(r.tanah);
                     const badgeClass = z === 'dry' ? 'alert' : (z === 'wet' ? 'warn' : 'ok');
                     const badgeText = this.getZoneLabel(z);
 
+                    // Distinguish source tag
+                    let sourceTag = `<span class="badge-tag emerald" style="font-size:10px;">LIVE</span>`;
+                    if (r.source === 'cache') {
+                        sourceTag = `<span class="badge-tag amber" style="font-size:10px;">CACHE</span>`;
+                    } else if (r.source === 'simulated') {
+                        sourceTag = `<span class="badge-tag blue" style="font-size:10px;">SIMULASI</span>`;
+                    }
+
                     return `
                         <tr>
-                            <td class="tabular-nums" style="color:var(--text-secondary);">${this.formatTime(r.t)}</td>
-                            <td class="tabular-nums">${r.suhu}°C</td>
-                            <td class="tabular-nums">${r.udara}%</td>
-                            <td class="tabular-nums" style="font-weight:600;">${r.tanah}%</td>
-                            <td><span class="metric-badge ${badgeClass}">${badgeText}</span></td>
+                            <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatTime(r.t))}</td>
+                            <td class="tabular-nums">${Number(r.suhu).toFixed(1)}°C</td>
+                            <td class="tabular-nums">${Math.round(r.udara)}%</td>
+                            <td class="tabular-nums" style="font-weight:600;">${Math.round(r.tanah)}%</td>
+                            <td><span class="metric-badge ${badgeClass}">${Sec.escapeHTML(badgeText)}</span></td>
+                            <td>${sourceTag}</td>
                         </tr>
                     `;
                 }).join('');
             }
 
-            // Pager
             if (hinfo) {
                 hinfo.textContent = total > 0 
                     ? `Menampilkan ${start + 1}–${Math.min(total, start + this.H.per)} dari ${total} baris (Halaman ${this.H.page}/${maxPage})`
@@ -285,7 +316,6 @@
             if (btnPrev) btnPrev.disabled = this.H.page <= 1;
             if (btnNext) btnNext.disabled = this.H.page >= maxPage;
 
-            // Update column header sort arrows
             document.querySelectorAll('#p-riwayat th[data-k]').forEach(th => {
                 if (th.dataset.k === this.H.k) {
                     th.setAttribute('aria-sort', this.H.dir > 0 ? 'ascending' : 'descending');
@@ -295,18 +325,28 @@
             });
         }
 
-        // CSV String Generator
+        // CSV Generator with Formula Injection Defense (CWE-1236)
         generateCSV() {
             const rows = this.getFilteredHistoryRows();
             const S = window.ConfigStore ? window.ConfigStore.get() : { dry: 65, wet: 78 };
-            const headers = ['Waktu', 'Suhu', 'Kelembapan_Udara', 'Kelembapan_Tanah', 'Zona', 'Status_Pompa'];
-            const lines = [headers.join(',')];
+            const headers = ['Waktu_ISO', 'Suhu_C', 'Kelembapan_Udara_Pct', 'Kelembapan_Tanah_Pct', 'Zona', 'Perintah_Pompa', 'Sumber_Data'];
+            const lines = [headers.map(h => Sec.escapeCSV(h)).join(',')];
 
             for (const r of rows) {
                 const z = this.getZone(r.tanah);
                 const pump = r.tanah < S.dry ? 'MENYALA' : 'MATI';
                 const timeStr = new Date(r.t).toISOString();
-                lines.push([timeStr, r.suhu, r.udara, r.tanah, this.getZoneLabel(z), pump].join(','));
+                const sourceStr = (r.source || 'live').toUpperCase();
+
+                lines.push([
+                    Sec.escapeCSV(timeStr),
+                    Sec.escapeCSV(Number(r.suhu).toFixed(1)),
+                    Sec.escapeCSV(Math.round(r.udara)),
+                    Sec.escapeCSV(Math.round(r.tanah)),
+                    Sec.escapeCSV(this.getZoneLabel(z)),
+                    Sec.escapeCSV(pump),
+                    Sec.escapeCSV(sourceStr)
+                ].join(','));
             }
 
             return lines.join('\n');
@@ -329,16 +369,23 @@
                 const soilStatusText = row.tanah < S.dry ? 'Kering' : (row.tanah > S.wet ? 'Basah' : 'Optimal');
 
                 const pumpBadgeClass = isPumpOn ? 'warn' : 'ok';
-                const pumpText = isPumpOn ? 'Menyala (Irigasi)' : 'Mati (Siaga)';
+                const pumpText = isPumpOn ? 'Perintah: Menyala' : 'Perintah: Mati';
+
+                let sourceBadge = `<span class="badge-tag emerald" style="font-size:9px;">LIVE</span>`;
+                if (row.source === 'cache') {
+                    sourceBadge = `<span class="badge-tag amber" style="font-size:9px;">CACHE</span>`;
+                } else if (row.source === 'simulated') {
+                    sourceBadge = `<span class="badge-tag blue" style="font-size:9px;">SIMULASI</span>`;
+                }
 
                 return `
                     <tr>
-                        <td class="tabular-nums" style="color:var(--text-secondary);">${this.formatTime(row.t)}</td>
-                        <td class="tabular-nums" style="font-weight:600;">${row.tanah}%</td>
-                        <td class="tabular-nums">${row.udara}%</td>
-                        <td class="tabular-nums">${row.suhu}°C</td>
-                        <td><span class="metric-badge ${soilBadgeClass}">${soilStatusText}</span></td>
-                        <td><span class="metric-badge ${pumpBadgeClass}">${pumpText}</span></td>
+                        <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatTime(row.t))}</td>
+                        <td class="tabular-nums" style="font-weight:600;">${Math.round(row.tanah)}%</td>
+                        <td class="tabular-nums">${Math.round(row.udara)}%</td>
+                        <td class="tabular-nums">${Number(row.suhu).toFixed(1)}°C</td>
+                        <td><span class="metric-badge ${soilBadgeClass}">${Sec.escapeHTML(soilStatusText)}</span></td>
+                        <td><span class="metric-badge ${pumpBadgeClass}">${Sec.escapeHTML(pumpText)}</span> ${sourceBadge}</td>
                     </tr>
                 `;
             }).join('');

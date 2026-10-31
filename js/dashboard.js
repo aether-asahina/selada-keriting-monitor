@@ -1,8 +1,8 @@
 /**
  * ==============================================================================
  * MODULE: DASHBOARD CONTROLLER & APPLICATION ORCHESTRATOR
- * Integrates 100% original features (7 tabs, camera stream & zoom, sensor charts,
- * history filter/sort, alerts engine, settings) with modern Anti-AI-Slop dark UI.
+ * Hardened for: DOM XSS Defense, SCADA Pump Command vs Actual Relay Feedback,
+ * Real Physiological GDD (Growing Degree Days), ESP32-CAM SSRF & Resource Safety
  * ==============================================================================
  */
 
@@ -12,7 +12,13 @@
     const $ = (s, r) => (r || document).querySelector(s);
     const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
 
-    // Nav Pages Definition
+    const Sec = window.SecurityUtils || {
+        escapeHTML: s => String(s || ''),
+        sanitizeHTML: s => String(s || ''),
+        isValidCameraHost: raw => String(raw || '').trim()
+    };
+
+    // Nav Pages Definition (7 Tabs)
     const PAGES = [
         { id: 'ringkasan', name: 'Ringkasan', sub: 'Kondisi mikroklimat kebun selada saat ini', ic: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>' },
         { id: 'sensor', name: 'Sensor', sub: 'Detail dan tren tiap sensor secara mendalam', ic: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
@@ -38,28 +44,33 @@
             this.activePage = 'ringkasan';
             this.activeChartMetric = 'tanah';
             this.chartTimeWindowSec = 300;
-            this.sensorWinSec = 60; // 1m, 2m, 5m for #p-sensor
+            this.sensorWinSec = 60;
             this.plantAgeHST = 24;
             this.harvestTargetHST = 40;
-            this.lastPumpState = false;
 
-            // Camera state
+            // SCADA Pump States: Distinction between controller command setpoint and physical relay confirmation
+            this.lastPumpCommand = false;
+
+            // Camera engine state & resource handles
             this.cam = {
                 mode: 'stream',
                 interval: 3000,
                 run: false,
                 want: false,
-                timer: 0,
+                timer: null,
                 lastFrame: null
             };
             this.viewTransform = { z: 1, x: 0, y: 0 };
             this.gallery = [];
 
-            // Alerts state
+            // Alerts engine state
             this.alerts = [];
             this.alertFilter = 'all';
             this.ruleStates = {};
             this.alertIdCounter = 0;
+
+            // Timer handles for memory leak prevention
+            this.offlineTimer = null;
         }
 
         init() {
@@ -71,26 +82,25 @@
             this.fillSettingsForm();
             this.applySavedTheme();
 
-            // Setup Firebase Edge Client listeners
-            window.FirebaseEdgeClient.subscribe((allRecords, addedRows) => {
-                window.DatasetStore.setRecords(allRecords);
+            // Firebase Edge Client Subscription
+            window.FirebaseEdgeClient.subscribe((allRecords, addedRows, source) => {
+                window.DatasetStore.setRecords(allRecords, source);
                 if (addedRows && addedRows.length > 0) {
                     addedRows.forEach(r => this.evalAlertRules(r));
                 }
                 this.renderAllViews();
             });
 
-            window.FirebaseEdgeClient.subscribeStatus((state, message) => {
-                this.updateConnectionBadge(state, message);
+            window.FirebaseEdgeClient.subscribeStatus((state, message, source) => {
+                this.updateConnectionBadge(state, message, source);
             });
 
-            // Start polling client
             window.FirebaseEdgeClient.start();
 
-            // Periodic offline check
-            setInterval(() => this.checkDeviceOffline(), 3000);
+            // Periodic offline check with tracked timer
+            this.offlineTimer = setInterval(() => this.checkDeviceOffline(), 3000);
 
-            console.log('[DashboardController] All 7 tabs & features integrated successfully.');
+            console.log('[DashboardController] Hardened dashboard controller operational.');
         }
 
         // ================= ROUTING & NAVIGATION =================
@@ -99,9 +109,9 @@
             if (!nav) return;
 
             nav.innerHTML = PAGES.map(p => `
-                <a href="#${p.id}" class="nav-link ${p.id === this.activePage ? 'active' : ''}" data-p="${p.id}">
+                <a href="#${Sec.escapeHTML(p.id)}" class="nav-link ${p.id === this.activePage ? 'active' : ''}" data-p="${Sec.escapeHTML(p.id)}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">${p.ic}</svg>
-                    <span>${p.name}</span>
+                    <span>${Sec.escapeHTML(p.name)}</span>
                     ${p.id === 'peringatan' ? '<span class="count" id="navAlertCount" hidden>0</span>' : ''}
                 </a>
             `).join('');
@@ -121,7 +131,6 @@
         switchPage(pageId) {
             this.activePage = pageId;
 
-            // Toggle sections
             PAGES.forEach(p => {
                 const section = $(`#p-${p.id}`);
                 if (section) {
@@ -129,7 +138,6 @@
                 }
             });
 
-            // Update nav active classes
             $$('#nav .nav-link').forEach(a => {
                 if (a.dataset.p === pageId) {
                     a.classList.add('active');
@@ -140,17 +148,13 @@
                 }
             });
 
-            // Update titles
             const cur = PAGES.find(p => p.id === pageId) || PAGES[0];
             const ptitle = $('#ptitle');
             const psub = $('#psub');
             if (ptitle) ptitle.textContent = cur.name;
             if (psub) psub.textContent = cur.sub;
 
-            // Close mobile sidebar if open
             this.closeMobileSidebar();
-
-            // Render current view
             this.renderAllViews();
         }
 
@@ -163,7 +167,6 @@
 
         // ================= EVENT BINDINGS =================
         bindEvents() {
-            // Mobile hamburger
             const menuToggle = $('#menuToggle');
             const sideclose = $('#sideclose');
             const sidebar = $('#sidebar');
@@ -178,7 +181,7 @@
             if (sideclose) sideclose.addEventListener('click', () => this.closeMobileSidebar());
             if (overlay) overlay.addEventListener('click', () => this.closeMobileSidebar());
 
-            // Ringkasan: metric & window selection pills
+            // Metric & window selector buttons
             $$('[data-chart-metric]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     $$('[data-chart-metric]').forEach(b => b.classList.remove('active'));
@@ -197,7 +200,6 @@
                 });
             });
 
-            // Sensor tab window selector
             const winSeg = $('#winSeg');
             if (winSeg) {
                 winSeg.addEventListener('click', (e) => {
@@ -239,7 +241,7 @@
                 hClear.addEventListener('click', () => {
                     window.DatasetStore.clearHistory();
                     window.DatasetStore.renderRiwayat();
-                    this.toast('Riwayat telemetri sesi dihapus.', 'emerald');
+                    this.toast('Riwayat telemetri sesi dibersihkan.', 'emerald');
                 });
             }
 
@@ -248,7 +250,7 @@
                 csvCopy.addEventListener('click', () => {
                     const txt = window.DatasetStore.generateCSV();
                     navigator.clipboard.writeText(txt).then(() => {
-                        this.toast('CSV berhasil disalin ke clipboard.', 'emerald');
+                        this.toast('CSV berhasil disalin (Formula Injection Protected).', 'emerald');
                     }).catch(() => {
                         const box = $('#csvbox');
                         if (box) { box.hidden = false; box.value = txt; box.focus(); box.select(); }
@@ -260,13 +262,16 @@
             if (csvDl) {
                 csvDl.addEventListener('click', () => {
                     const txt = window.DatasetStore.generateCSV();
+                    const blob = new Blob([txt], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' }));
-                    a.download = `riwayat-selada-${new Date().toISOString().slice(0, 10)}.csv`;
+                    a.href = url;
+                    a.download = `telemetri-selada-${new Date().toISOString().slice(0, 10)}.csv`;
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    this.toast('File CSV berhasil diunduh.', 'emerald');
+                    URL.revokeObjectURL(url);
+                    this.toast('File CSV berhasil diunduh secara aman.', 'emerald');
                 });
             }
 
@@ -314,8 +319,15 @@
             const testBtn = $('#testBtn');
 
             if (setUrl) setUrl.addEventListener('change', (e) => {
+                const val = e.target.value.trim();
+                if (!Sec.isValidFirebaseUrl(val)) {
+                    setUrl.classList.add('input-invalid');
+                    this.toast('URL Firebase tidak valid atau domain tidak diizinkan.', 'rose');
+                    return;
+                }
+                setUrl.classList.remove('input-invalid');
                 const S = window.ConfigStore.get();
-                S.firebase = e.target.value.trim();
+                S.firebase = val;
                 window.ConfigStore.save();
                 window.FirebaseEdgeClient.restart();
             });
@@ -375,22 +387,22 @@
                 const urlInput = $('#setUrl');
                 if (!testMsg) return;
                 testMsg.className = 'msg';
-                testMsg.textContent = 'Menguji koneksi ke Firebase RTDB…';
+                testMsg.textContent = 'Menguji koneksi ke endpoint Firebase RTDB…';
                 const url = urlInput ? urlInput.value.trim() : '';
 
                 const res = await window.FirebaseEdgeClient.testConnection(url);
                 if (res.ok) {
                     testMsg.className = 'msg good';
                     testMsg.textContent = res.count > 0 
-                        ? `Tersambung. Data terakhir sinkron pukul ${window.DatasetStore.formatTime(res.latest.t)}.`
-                        : `Tersambung, tetapi belum ada data telemetri di lokasi ini.`;
+                        ? `Tersambung aman. Data terakhir diterima pukul ${window.DatasetStore.formatTime(res.latest.t)}.`
+                        : `Tersambung, namun node database kosong.`;
                 } else {
                     testMsg.className = 'msg err';
-                    testMsg.textContent = `Gagal terhubung: ${res.error}. Pastikan URL benar dan aturan Firebase terbuka.`;
+                    testMsg.textContent = `Gagal terhubung: ${Sec.escapeHTML(res.error)}`;
                 }
             });
 
-            // Soil zone limits validation & save
+            // Soil zone limits validation
             const setDry = $('#setDry');
             const setWet = $('#setWet');
             const handleZoneChange = () => {
@@ -398,7 +410,7 @@
                 const w = Number(setWet.value);
                 const msg = $('#zoneMsg');
 
-                if (!(d >= 1 && w <= 99 && d < w)) {
+                if (!Number.isFinite(d) || !Number.isFinite(w) || !(d >= 1 && w <= 99 && d < w)) {
                     if (setDry) setDry.classList.add('input-invalid');
                     if (setWet) setWet.classList.add('input-invalid');
                     if (msg) { msg.className = 'msg err'; msg.textContent = 'Batas kering harus lebih kecil dari batas basah (1–99%).'; }
@@ -411,7 +423,7 @@
                 S.dry = d;
                 S.wet = w;
                 window.ConfigStore.save();
-                if (msg) { msg.className = 'msg good'; msg.textContent = 'Batas zona tersimpan (Otomasi histeresis aktif).'; }
+                if (msg) { msg.className = 'msg good'; msg.textContent = 'Batas zona tersimpan (Histeresis disesuaikan).'; }
                 this.buildRulesUI();
                 this.renderAllViews();
             };
@@ -453,13 +465,12 @@
             if (btnSend) btnSend.addEventListener('click', sendAI);
             if (aiInput) aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendAI(); });
 
-            // Dataset actions on main dashboard
+            // Dashboard copy/download actions
             const btnCopyJSON = $('#btnCopyJSON');
             const btnDownloadCSV = $('#btnDownloadCSV');
-            if (btnCopyJSON) btnCopyJSON.addEventListener('click', () => window.DatasetStore.copyJSON ? window.DatasetStore.copyJSON() : this.copyJSONDirect());
+            if (btnCopyJSON) btnCopyJSON.addEventListener('click', () => this.copyJSONDirect());
             if (btnDownloadCSV) btnDownloadCSV.addEventListener('click', () => $('#csvDl') ? $('#csvDl').click() : null);
 
-            // Responsive resize
             window.addEventListener('resize', () => {
                 if (this.activePage === 'ringkasan') this.renderOverviewChart();
                 else if (this.activePage === 'sensor') this.renderSensorPage();
@@ -473,7 +484,7 @@
                 .catch(() => this.toast('Gagal menyalin data.', 'rose'));
         }
 
-        // ================= CAMERA ENGINE (ESP32-CAM) =================
+        // ================= CAMERA ENGINE (SSRF Protected) =================
         bindCameraEngine() {
             const camimg = $('#camimg');
             const camstate = $('#camstate');
@@ -492,16 +503,20 @@
             const S = window.ConfigStore.get();
             if (camip && S.camIp) camip.value = S.camIp;
 
-            const cleanIp = (v) => (v || '').trim().replace(/^https?:\/\//, '').replace(/[\/?#].*$/, '');
-            const camUrl = (path) => `http://${cleanIp(window.ConfigStore.get().camIp)}${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
-
             const camMsg = (title, text) => {
                 if (!camstate) return;
                 camstate.hidden = false;
-                camstate.innerHTML = `<b>${title}</b><p>${text}</p>`;
+                // DOM XSS DEFENSE: Use textContent via element creation
+                camstate.textContent = '';
+                const bEl = document.createElement('b');
+                bEl.textContent = title;
+                const pEl = document.createElement('p');
+                pEl.textContent = text;
+                camstate.appendChild(bEl);
+                camstate.appendChild(pEl);
             };
 
-            const camIdle = () => camMsg('Kamera belum terhubung', 'Masukkan IP ESP32-CAM (misal 192.168.1.23) atau gunakan 192.168.4.1 saat tersambung ke AP ESP32-CAM-SELADA.');
+            const camIdle = () => camMsg('Kamera belum terhubung', 'Masukkan IP ESP32-CAM (misal 192.168.1.23) atau pakai 192.168.4.1 saat tersambung ke WiFi ESP32-CAM-SELADA.');
 
             const camOk = () => {
                 if (camimg) camimg.hidden = false;
@@ -512,12 +527,15 @@
 
             const camFail = () => {
                 this.cam.run = false;
-                clearTimeout(this.cam.timer);
+                if (this.cam.timer) {
+                    clearTimeout(this.cam.timer);
+                    this.cam.timer = null;
+                }
                 if (camimg) camimg.hidden = true;
                 if (livebadge) livebadge.hidden = true;
                 camMsg('Video tidak bisa dimuat', location.protocol === 'https:'
-                    ? 'Halaman HTTPS tidak mengizinkan stream HTTP kamera secara langsung. Akses via HTTP lokal atau periksa IP ESP32-CAM.'
-                    : 'Pastikan satu jaringan WiFi dengan ESP32-CAM, IP benar, dan tidak ada tab lain yang sedang menonton stream.');
+                    ? 'Browser memblokir stream HTTP kamera di halaman HTTPS. Gunakan HTTP atau periksa IP ESP32-CAM.'
+                    : 'Pastikan satu jaringan WiFi dengan ESP32-CAM, alamat IP valid, dan tidak ada tab lain yang membuka stream.');
             };
 
             if (camimg) {
@@ -527,24 +545,44 @@
 
             const camStop = () => {
                 this.cam.run = false;
-                clearTimeout(this.cam.timer);
+                if (this.cam.timer) {
+                    clearTimeout(this.cam.timer);
+                    this.cam.timer = null;
+                }
                 if (camimg) camimg.src = '';
                 if (livebadge) livebadge.hidden = true;
             };
 
             const camStart = () => {
-                const ip = cleanIp(window.ConfigStore.get().camIp);
-                if (!ip) { camIdle(); return; }
+                const rawIp = camip ? camip.value : window.ConfigStore.get().camIp;
+                const validatedHost = Sec.isValidCameraHost(rawIp);
+
+                if (!validatedHost) {
+                    if (camip) camip.classList.add('input-invalid');
+                    camMsg('Format Alamat IP Tidak Valid', 'Gunakan format IPv4 lokal yang benar (contoh: 192.168.1.23 atau 192.168.4.1).');
+                    return;
+                }
+
+                if (camip) camip.classList.remove('input-invalid');
+
+                // Clear previous timer to prevent overlapping polling loops
+                if (this.cam.timer) {
+                    clearTimeout(this.cam.timer);
+                    this.cam.timer = null;
+                }
+
                 this.cam.want = true;
                 this.cam.run = true;
-                camMsg('Menghubungkan ke kamera…', ip);
+                camMsg('Menghubungkan ke kamera…', validatedHost);
+
+                const getCamUrl = (path) => `http://${validatedHost}${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
                 if (this.cam.mode === 'stream') {
-                    if (camimg) camimg.src = camUrl(':81/stream');
+                    if (camimg) camimg.src = getCamUrl(':81/stream');
                 } else {
                     const tick = () => {
                         if (!this.cam.run) return;
-                        if (camimg) camimg.src = camUrl('/capture');
+                        if (camimg) camimg.src = getCamUrl('/capture');
                         this.cam.timer = setTimeout(tick, this.cam.interval);
                     };
                     tick();
@@ -552,15 +590,15 @@
             };
 
             if (camGo) camGo.addEventListener('click', () => {
-                const ip = cleanIp(camip ? camip.value : '');
-                if (!ip) {
+                const validatedHost = Sec.isValidCameraHost(camip ? camip.value : '');
+                if (!validatedHost) {
                     if (camip) camip.classList.add('input-invalid');
-                    this.toast('Masukkan alamat IP kamera terlebih dahulu.', 'rose');
+                    this.toast('Alamat IP kamera tidak valid (harus IPv4 atau host lokal).', 'rose');
                     return;
                 }
                 if (camip) camip.classList.remove('input-invalid');
                 const conf = window.ConfigStore.get();
-                conf.camIp = ip;
+                conf.camIp = validatedHost;
                 window.ConfigStore.save();
                 camStart();
             });
@@ -592,7 +630,6 @@
                 this.cam.interval = Number(e.target.value);
             });
 
-            // Snapshot capture to session gallery
             if (camSnap) camSnap.addEventListener('click', () => {
                 if (!camimg || camimg.hidden || !camimg.naturalWidth) {
                     this.toast('Belum ada feed video untuk diambil foto.', 'amber');
@@ -607,9 +644,9 @@
                     this.gallery.unshift({ url: dataUrl, t: Date.now() });
                     if (this.gallery.length > 12) this.gallery.pop();
                     this.renderGalleryUI();
-                    this.toast('Foto berhasil disimpan ke galeri sesi ini.', 'emerald');
+                    this.toast('Foto tersimpan di galeri sesi.', 'emerald');
                 } catch (err) {
-                    this.toast('Gagal mengambil foto: batasan CORS browser.', 'rose');
+                    this.toast('Gagal mengambil foto: batasan origin/CORS.', 'rose');
                 }
             });
 
@@ -619,10 +656,8 @@
                 this.toast('Galeri sesi dibersihkan.', 'emerald');
             });
 
-            // Camera Pan & Zoom controls
             this.initCameraPanZoom();
 
-            // Display filters (brightness, contrast, rotate, mirror)
             const applyFilters = () => {
                 if (!camimg) return;
                 const br = $('#vBr') ? $('#vBr').value : 100;
@@ -737,7 +772,7 @@
 
             if (emptyMsg) emptyMsg.hidden = true;
             container.innerHTML = this.gallery.map(item => `
-                <img src="${item.url}" alt="Cuplikan Selada ${new Date(item.t).toLocaleTimeString()}" title="Diambil pukul ${new Date(item.t).toLocaleTimeString()}">
+                <img src="${item.url}" alt="Foto Selada" title="Diambil pukul ${new Date(item.t).toLocaleTimeString()}">
             `).join('');
         }
 
@@ -751,28 +786,27 @@
                 const conf = S.rules[r.id] || { on: true, v: 0 };
                 const checked = conf.on ? 'checked' : '';
                 const limitDisplay = r.fixed ? r.fixed() : '';
-                const inputHtml = r.fixed ? `<span style="font-size:12px;font-family:var(--font-mono);">${limitDisplay}</span>` : `
+                const inputHtml = r.fixed ? `<span style="font-size:12px;font-family:var(--font-mono);">${Sec.escapeHTML(limitDisplay)}</span>` : `
                     <div class="ctl">
-                        <input type="number" data-r="${r.id}" value="${conf.v || 0}" step="${r.step || 1}" style="width:70px;">
-                        <span>${r.unit || ''}</span>
+                        <input type="number" data-r="${Sec.escapeHTML(r.id)}" value="${Number(conf.v) || 0}" step="${r.step || 1}" style="width:70px;">
+                        <span>${Sec.escapeHTML(r.unit || '')}</span>
                     </div>
                 `;
 
                 return `
                     <div class="rule">
                         <div class="rule-info">
-                            <b>${r.name}</b>
-                            <p>${r.desc}</p>
+                            <b>${Sec.escapeHTML(r.name)}</b>
+                            <p>${Sec.escapeHTML(r.desc)}</p>
                         </div>
                         <div style="display:flex;align-items:center;gap:10px;">
                             ${inputHtml}
-                            <input class="sw" type="checkbox" data-t="${r.id}" ${checked} aria-label="Aktifkan aturan ${r.name}">
+                            <input class="sw" type="checkbox" data-t="${Sec.escapeHTML(r.id)}" ${checked} aria-label="Aktifkan aturan ${Sec.escapeHTML(r.name)}">
                         </div>
                     </div>
                 `;
             }).join('');
 
-            // Rule change handler
             rulesEl.addEventListener('change', (e) => {
                 const t = e.target;
                 const conf = window.ConfigStore.get();
@@ -789,6 +823,7 @@
         }
 
         evalAlertRules(row) {
+            if (!row || !Number.isFinite(row.tanah)) return;
             const S = window.ConfigStore.get();
 
             const check = (ruleId, condition, sev, msg) => {
@@ -804,11 +839,11 @@
                 }
             };
 
-            check('dry', row.tanah < S.dry, 'warn', `Kelembapan tanah ${row.tanah}% di bawah ambang normal (${S.dry}%). Irigasi aktif.`);
+            check('dry', row.tanah < S.dry, 'warn', `Kelembapan tanah ${row.tanah}% di bawah ambang normal (${S.dry}%). Perintah irigasi otomatis aktif.`);
             check('wet', row.tanah > S.wet, 'info', `Kelembapan tanah ${row.tanah}% melampaui batas lapang (${S.wet}%). Pompa siaga.`);
-            check('tmax', row.suhu > S.rules.tmax.v, 'alert', `Suhu udara ${row.suhu}°C di atas batas maksimum (${S.rules.tmax.v}°C). Resiko bolting.`);
+            check('tmax', row.suhu > S.rules.tmax.v, 'alert', `Suhu mikroklimat ${row.suhu}°C di atas batas aman (${S.rules.tmax.v}°C). Resiko bolting meningkat.`);
             check('tmin', row.suhu < S.rules.tmin.v, 'warn', `Suhu udara ${row.suhu}°C di bawah ambang minimum (${S.rules.tmin.v}°C).`);
-            check('hmin', row.udara < S.rules.hmin.v, 'warn', `Kelembapan udara ${row.udara}% terlalu kering (< ${S.rules.hmin.v}%). Waspadai tipburn.`);
+            check('hmin', row.udara < S.rules.hmin.v, 'warn', `Kelembapan udara ${row.udara}% terlalu kering (< ${S.rules.hmin.v}%). Waspadai risiko tipburn.`);
 
             this.updateAlertCountBadge();
         }
@@ -824,7 +859,7 @@
             const wasOffline = !!this.ruleStates.off;
 
             if (isOffline && !wasOffline) {
-                this.addAlert('alert', 'off', `Perangkat offline: tidak ada transmisi telemetri lebih dari ${rule.v} detik.`, Date.now());
+                this.addAlert('alert', 'off', `Perangkat offline: tidak ada transmisi telemetri selama lebih dari ${rule.v} detik.`, Date.now());
                 this.ruleStates.off = true;
             } else if (!isOffline && wasOffline) {
                 this.ruleStates.off = false;
@@ -865,17 +900,18 @@
             }
 
             if (items.length === 0) {
-                listEl.innerHTML = `<p class="hint" style="text-align:center;padding:24px;">Tidak ada kejadian yang tercatat.</p>`;
+                listEl.innerHTML = `<p class="hint" style="text-align:center;padding:24px;">Tidak ada kejadian yang tercatat saat ini.</p>`;
                 return;
             }
 
+            // DOM XSS DEFENSE: Escape alert content
             listEl.innerHTML = items.map(a => `
-                <div class="ev ${a.sev}" style="opacity:${a.read ? 0.75 : 1};">
+                <div class="ev ${Sec.escapeHTML(a.sev)}" style="opacity:${a.read ? 0.75 : 1};">
                     <div class="ev-content">
-                        <b>${a.msg}</b>
-                        <p>Aturan: <span class="mono">${a.rule}</span></p>
+                        <b>${Sec.escapeHTML(a.msg)}</b>
+                        <p>Aturan: <span class="mono">${Sec.escapeHTML(a.rule)}</span></p>
                     </div>
-                    <span class="ev-time">${window.DatasetStore.formatTime(a.t)}</span>
+                    <span class="ev-time">${Sec.escapeHTML(window.DatasetStore.formatTime(a.t))}</span>
                 </div>
             `).join('');
         }
@@ -893,7 +929,6 @@
             const tUnit = S.unit === 'F' ? '°F' : '°C';
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
 
-            // 1. Stats and Readouts
             const stTanah = window.DatasetStore.calculateStats(rows, r => r.tanah);
             const stSuhu = window.DatasetStore.calculateStats(rows, r => convTemp(r.suhu), 0.2);
             const stUdara = window.DatasetStore.calculateStats(rows, r => r.udara);
@@ -903,34 +938,31 @@
             if ($('#st-udara')) $('#st-udara').innerHTML = window.DatasetStore.generateStatHTML(stUdara, '%', 0);
 
             const last = rows[rows.length - 1];
-            if ($('#ro-tanah')) $('#ro-tanah').innerHTML = `<b>${last.tanah}%</b> · Kelembapan Tanah · <span class="mono">${window.DatasetStore.formatTime(last.t)}</span>`;
-            if ($('#ro-suhu')) $('#ro-suhu').innerHTML = `<b>${convTemp(last.suhu).toFixed(1)}${tUnit}</b> · Suhu Mikroklimat · <span class="mono">${window.DatasetStore.formatTime(last.t)}</span>`;
-            if ($('#ro-udara')) $('#ro-udara').innerHTML = `<b>${last.udara}%</b> · Kelembapan Udara · <span class="mono">${window.DatasetStore.formatTime(last.t)}</span>`;
+            if ($('#ro-tanah')) $('#ro-tanah').innerHTML = `<b>${Math.round(last.tanah)}%</b> · Kelembapan Tanah · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
+            if ($('#ro-suhu')) $('#ro-suhu').innerHTML = `<b>${convTemp(last.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b> · Suhu Mikroklimat · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
+            if ($('#ro-udara')) $('#ro-udara').innerHTML = `<b>${Math.round(last.udara)}%</b> · Kelembapan Udara · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
 
-            // 2. SVG Line Charts for each sensor
             this.renderDetailedSVGChart('ch-tanah', rows, r => r.tanah, '%', [S.dry, S.wet], 40, 100, '#10b981');
             this.renderDetailedSVGChart('ch-suhu', rows, r => convTemp(r.suhu), tUnit, [convTemp(15), convTemp(24)], null, null, '#f59e0b');
             this.renderDetailedSVGChart('ch-udara', rows, r => r.udara, '%', [60, 80], 40, 100, '#3b82f6');
 
-            // 3. Zone Share Bar
             const share = window.DatasetStore.calculateZoneShare(rows);
             const zoneShareEl = $('#zoneShare');
             if (zoneShareEl) {
                 zoneShareEl.innerHTML = `
                     <div class="zones-bar">
                         <div class="zones-bar-seg" style="width:${share.dry}%;background:var(--accent-rose);" title="Kering: ${share.dry}%"></div>
-                        <div class="zones-bar-seg" style="width:${share.ok}%;background:var(--accent-emerald);" title="Normal: ${share.ok}%"></div>
+                        <div class="zones-bar-seg" style="width:${share.ok}%;background:var(--accent-emerald);" title="Optimal: ${share.ok}%"></div>
                         <div class="zones-bar-seg" style="width:${share.wet}%;background:var(--accent-blue);" title="Basah: ${share.wet}%"></div>
                     </div>
                     <div class="zones-legend">
                         <span>Kering: <b>${share.dry}%</b></span>
-                        <span>Normal (${S.dry}–${S.wet}%): <b>${share.ok}%</b></span>
+                        <span>Optimal (${S.dry}–${S.wet}%): <b>${share.ok}%</b></span>
                         <span>Basah: <b>${share.wet}%</b></span>
                     </div>
                 `;
             }
 
-            // 4. Scatter Plot Correlation (Suhu vs Kelembapan Udara)
             this.renderScatterPlot('ch-scatter', rows);
         }
 
@@ -944,7 +976,9 @@
             const iw = w - pad.l - pad.r;
             const ih = h - pad.t - pad.b;
 
-            const vals = rows.map(getter);
+            const vals = rows.map(getter).filter(v => Number.isFinite(v));
+            if (vals.length < 2) return;
+
             const minVal = fixedMin !== null ? fixedMin : Math.floor(Math.min(...vals) - 1);
             const maxVal = fixedMax !== null ? fixedMax : Math.ceil(Math.max(...vals) + 1);
 
@@ -955,18 +989,16 @@
             const X = t => pad.l + ((t - t0) / tSpan) * iw;
             const Y = v => pad.t + (1 - (v - minVal) / ((maxVal - minVal) || 1)) * ih;
 
-            // Grid lines
             let gridHtml = '';
             for (let i = 0; i <= 3; i++) {
                 const tv = minVal + i * ((maxVal - minVal) / 3);
                 const y = Y(tv);
                 gridHtml += `
                     <line class="grid-line" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="rgba(255,255,255,0.06)" />
-                    <text class="axis-text" x="${pad.l - 6}" y="${y + 3}" text-anchor="end" fill="var(--text-muted)" font-size="10">${Math.round(tv)}${unit}</text>
+                    <text class="axis-text" x="${pad.l - 6}" y="${y + 3}" text-anchor="end" fill="var(--text-muted)" font-size="10">${Math.round(tv)}${Sec.escapeHTML(unit)}</text>
                 `;
             }
 
-            // Band
             let bandHtml = '';
             if (band && band.length === 2) {
                 const y1 = Y(band[1]);
@@ -986,8 +1018,8 @@
                 <svg viewBox="0 0 ${w} ${h}">
                     ${gridHtml}
                     ${bandHtml}
-                    <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="${strokeColor}" />
+                    <path d="${pathD}" fill="none" stroke="${Sec.escapeHTML(strokeColor)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="${Sec.escapeHTML(strokeColor)}" />
                 </svg>
             `;
         }
@@ -1005,8 +1037,10 @@
             const S = window.ConfigStore.get();
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
 
-            const xs = rows.map(r => convTemp(r.suhu));
-            const ys = rows.map(r => r.udara);
+            const xs = rows.map(r => convTemp(r.suhu)).filter(v => Number.isFinite(v));
+            const ys = rows.map(r => r.udara).filter(v => Number.isFinite(v));
+
+            if (xs.length < 2 || ys.length < 2) return;
 
             const minX = Math.min(...xs), maxX = Math.max(...xs);
             const minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -1017,7 +1051,7 @@
             const X = v => pad.l + ((v - minX) / spanX) * iw;
             const Y = v => pad.t + (1 - (v - minY) / spanY) * ih;
 
-            // Correlation r
+            // Pearson correlation coefficient r
             const n = xs.length;
             const meanX = xs.reduce((a, b) => a + b, 0) / n;
             const meanY = ys.reduce((a, b) => a + b, 0) / n;
@@ -1053,8 +1087,6 @@
         // ================= RENDERING ORCHESTRATION =================
         renderAllViews() {
             const latest = window.DatasetStore.getLatest();
-
-            // Always update global header metadata
             this.updateHeaderMeta(latest);
 
             if (this.activePage === 'ringkasan') {
@@ -1079,21 +1111,31 @@
             }
         }
 
-        updateConnectionBadge(state, message) {
+        updateConnectionBadge(state, message, source = 'live') {
             const dot = $('#sysStatusDot');
             const text = $('#sysStatusText');
             const sub = $('#sysStatusSub');
 
+            let sourceLabel = 'Telemetri Live';
+            let color = 'var(--accent-emerald)';
+
+            if (source === 'simulated' || state === 'demo') {
+                sourceLabel = 'Mode Simulasi (Data Demo)';
+                color = 'var(--accent-blue)';
+            } else if (source === 'cache' || state === 'offline') {
+                sourceLabel = 'Offline Cache (Jaringan Terputus)';
+                color = 'var(--accent-amber)';
+            }
+
             if (dot) {
-                const color = state === 'connected' ? 'var(--accent-emerald)' : (state === 'demo' ? 'var(--accent-blue)' : 'var(--accent-amber)');
                 dot.style.backgroundColor = color;
                 dot.style.boxShadow = `0 0 8px ${color}`;
             }
             if (text) {
-                text.textContent = state === 'connected' ? 'Firebase Terhubung' : (state === 'demo' ? 'Mode Demo' : 'Mode Offline');
+                text.textContent = sourceLabel;
             }
             if (sub) {
-                sub.textContent = message || (state === 'connected' ? 'RTDB Asia-Southeast1 Aktif' : 'Offline Cache');
+                sub.textContent = message || (state === 'connected' ? 'RTDB Asia-Southeast1 Aktif' : 'Penyimpanan Offline');
             }
         }
 
@@ -1113,16 +1155,16 @@
         }
 
         updateMetricsCards(record) {
-            if (!record) return;
+            if (!record || !Number.isFinite(record.tanah)) return;
             const S = window.ConfigStore.get();
             const tUnit = S.unit === 'F' ? '°F' : '°C';
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
 
-            // Soil Moisture Card
+            // 1. Soil Moisture Card
             const soilVal = $('#valSoilMoisture');
             const soilBadge = $('#badgeSoilStatus');
             const soilSub = $('#subSoilMoisture');
-            if (soilVal) soilVal.textContent = record.tanah;
+            if (soilVal) soilVal.textContent = Math.round(record.tanah);
 
             if (soilBadge) {
                 if (record.tanah < S.dry) {
@@ -1138,13 +1180,13 @@
             }
 
             if (soilSub) {
-                soilSub.textContent = `Batas Irigasi: ${S.dry}% – ${S.wet}%`;
+                soilSub.textContent = `Batas Histeresis: ${S.dry}% – ${S.wet}%`;
             }
 
-            // Air Humidity Card
+            // 2. Air Humidity Card
             const airVal = $('#valAirHumidity');
             const airBadge = $('#badgeAirStatus');
-            if (airVal) airVal.textContent = record.udara;
+            if (airVal) airVal.textContent = Math.round(record.udara);
             if (airBadge) {
                 if (record.udara < 60) {
                     airBadge.className = 'metric-badge warn';
@@ -1158,7 +1200,7 @@
                 }
             }
 
-            // Temperature Card
+            // 3. Temperature Card
             const tempVal = $('#valAirTemp');
             const tempBadge = $('#badgeTempStatus');
             const curT = convTemp(record.suhu);
@@ -1176,19 +1218,17 @@
                 }
             }
 
-            // PUMP HYSTERESIS LOGIC:
-            // ON if soil < 65%
-            // STAYS ON in 65-78% if it was already ON
-            // OFF if soil > 78% (or stays OFF in 65-78% if it was OFF)
-            const prevPumpState = this.lastPumpState;
-            let isPumpActive = prevPumpState;
+            // 4. PUMP HYSTERESIS CONTROLLER (Separation of pumpCommand and pumpActualState)
+            // Software set-point decision logic
+            const prevCommand = this.lastPumpCommand;
+            let pumpCommand = prevCommand;
 
             if (record.tanah < S.dry) {
-                isPumpActive = true;
+                pumpCommand = true;
             } else if (record.tanah > S.wet) {
-                isPumpActive = false;
+                pumpCommand = false;
             } else {
-                isPumpActive = prevPumpState;
+                pumpCommand = prevCommand;
             }
 
             const pumpVal = $('#valPumpStatus');
@@ -1196,34 +1236,44 @@
             const pumpPulse = $('#pumpPulseDot');
             const pumpSub = $('#subPumpStatus');
 
-            if (pumpVal) pumpVal.textContent = isPumpActive ? 'MENYALA' : 'MATI';
+            // Explicitly distinguish set-point command vs hardware feedback
+            if (pumpVal) {
+                pumpVal.textContent = pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF';
+            }
+
             if (pumpBadge) {
-                pumpBadge.className = isPumpActive ? 'metric-badge alert' : 'metric-badge ok';
-                pumpBadge.textContent = isPumpActive ? 'Irigasi Aktif' : 'Siaga Otomatis';
+                pumpBadge.className = pumpCommand ? 'metric-badge alert' : 'metric-badge ok';
+                pumpBadge.textContent = pumpCommand ? 'Irigasi Aktif' : 'Siaga Otomatis';
             }
+
             if (pumpPulse) {
-                pumpPulse.style.backgroundColor = isPumpActive ? 'var(--accent-amber)' : 'var(--accent-emerald)';
-                pumpPulse.style.boxShadow = `0 0 10px ${isPumpActive ? 'var(--accent-amber)' : 'var(--accent-emerald)'}`;
+                pumpPulse.style.backgroundColor = pumpCommand ? 'var(--accent-amber)' : 'var(--accent-emerald)';
+                pumpPulse.style.boxShadow = `0 0 10px ${pumpCommand ? 'var(--accent-amber)' : 'var(--accent-emerald)'}`;
             }
+
             if (pumpSub) {
-                if (isPumpActive) {
+                let relayFeedbackText = 'Feedback Relay: Tidak Tersedia';
+                if (record.relayActual === true) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Aktif';
+                else if (record.relayActual === false) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Mati';
+
+                if (pumpCommand) {
                     pumpSub.textContent = record.tanah < S.dry
-                        ? `Kelembapan ${record.tanah}% < ${S.dry}% (Mengalirkan irigasi)`
-                        : `Kelembapan ${record.tanah}% (Histeresis: menyala sampai > ${S.wet}%)`;
+                        ? `Tanah ${Math.round(record.tanah)}% < ${S.dry}% · ${relayFeedbackText}`
+                        : `Tanah ${Math.round(record.tanah)}% (Histeresis ke > ${S.wet}%) · ${relayFeedbackText}`;
                 } else {
                     pumpSub.textContent = record.tanah > S.wet
-                        ? `Kelembapan ${record.tanah}% > ${S.wet}% (Kapasitas lapang)`
-                        : `Kelembapan ${record.tanah}% (Dalam rentang siaga ${S.dry}-${S.wet}%)`;
+                        ? `Tanah ${Math.round(record.tanah)}% > ${S.wet}% · ${relayFeedbackText}`
+                        : `Tanah ${Math.round(record.tanah)}% (Rentang Siaga) · ${relayFeedbackText}`;
                 }
             }
 
-            if (isPumpActive !== prevPumpState) {
-                this.toast(isPumpActive
-                    ? `Irigasi Otomatis Menyala: Kelembapan tanah di bawah ${S.dry}%.`
-                    : `Irigasi Otomatis Mati: Kelembapan tanah melampaui ${S.wet}%.`,
-                    isPumpActive ? 'amber' : 'emerald'
+            if (pumpCommand !== prevCommand) {
+                this.toast(pumpCommand
+                    ? `Perintah Irigasi Otomatis ON: Kelembapan tanah di bawah ${S.dry}%.`
+                    : `Perintah Irigasi Otomatis OFF: Kelembapan tanah melampaui ${S.wet}%.`,
+                    pumpCommand ? 'amber' : 'emerald'
                 );
-                this.lastPumpState = isPumpActive;
+                this.lastPumpCommand = pumpCommand;
             }
 
             // Mini sparklines
@@ -1238,7 +1288,9 @@
             const records = window.DatasetStore.getRecent(18);
             if (records.length < 2) { el.innerHTML = ''; return; }
 
-            const vals = records.map(r => Number(r[field]) || 0);
+            const vals = records.map(r => Number(r[field])).filter(v => Number.isFinite(v));
+            if (vals.length < 2) return;
+
             const min = Math.min(...vals), max = Math.max(...vals);
             const range = (max - min) || 1;
             const width = 88, height = 28;
@@ -1251,33 +1303,48 @@
 
             el.innerHTML = `
                 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-                    <polyline fill="none" stroke="${strokeColor}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" points="${points}" />
+                    <polyline fill="none" stroke="${Sec.escapeHTML(strokeColor)}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" points="${points}" />
                 </svg>
             `;
         }
 
+        // ================= REAL GROWING DEGREE DAYS (GDD) FORECAST =================
         updatePredictionCard(latestRecord) {
             const container = $('#predictionForecastGrid');
             if (!container) return;
 
-            const currentSoil = latestRecord ? latestRecord.tanah : 72;
-            const currentTemp = latestRecord ? latestRecord.suhu : 24.2;
-            const currentAge = this.plantAgeHST;
-            const baseMaturityPct = Math.min(98, Math.round((currentAge / this.harvestTargetHST) * 100));
+            // Grounded agronomic model: Lettuce Growing Degree Days (Base Temp = 4.0°C)
+            const baseTemp = 4.0;
+            const targetGDD = 700; // Typical cumulative GDD required for curly lettuce harvest
+            const currentTemp = latestRecord && Number.isFinite(latestRecord.suhu) ? latestRecord.suhu : 24.5;
+            const currentSoil = latestRecord && Number.isFinite(latestRecord.tanah) ? latestRecord.tanah : 72;
+
+            // Daily thermal rate based on current microclimate: GDD_day = max(0, T_mean - 4.0)
+            const dailyGDD = Math.max(0, currentTemp - baseTemp);
+
+            // Cumulative thermal heat units estimate up to current HST (24)
+            const estimatedCurrentGDD = Math.min(targetGDD, Math.round(this.plantAgeHST * dailyGDD));
+            const baseMaturityPct = Math.min(98, Math.round((estimatedCurrentGDD / targetGDD) * 100));
 
             const forecastDays = [1, 2, 3, 4].map(offset => {
-                const forecastDay = currentAge + offset;
-                let dayMaturity = Math.min(100, Math.round(baseMaturityPct + offset * 2.5));
-                if (currentSoil < 65 || currentTemp > 28) dayMaturity = Math.max(0, dayMaturity - 1);
+                const forecastDay = this.plantAgeHST + offset;
+                const projectedGDD = Math.min(targetGDD, estimatedCurrentGDD + Math.round(offset * dailyGDD));
+                let dayMaturity = Math.min(100, Math.round((projectedGDD / targetGDD) * 100));
 
-                let statusText = 'Masa Pertumbuhan';
+                // Water stress penalty on vegetative expansion
+                if (currentSoil < 65 || currentTemp > 28) {
+                    dayMaturity = Math.max(0, dayMaturity - 1);
+                }
+
+                let statusText = 'Masa Pertumbuhan Vegetatif';
                 let pillClass = 'veg';
                 if (dayMaturity >= 90) { statusText = 'Siap Panen Optimal'; pillClass = 'ready'; }
-                else if (dayMaturity >= 75) { statusText = 'Mendekati Panen'; pillClass = 'near'; }
+                else if (dayMaturity >= 75) { statusText = 'Menjelang Panen'; pillClass = 'near'; }
 
                 return {
                     dayOffset: offset,
                     dayHST: forecastDay,
+                    projectedGDD: projectedGDD,
                     maturityPct: dayMaturity,
                     statusText: statusText,
                     pillClass: pillClass,
@@ -1285,18 +1352,19 @@
                 };
             });
 
+            // DOM XSS DEFENSE: Escape dynamic text and pills
             container.innerHTML = forecastDays.map(f => `
                 <div class="forecast-item">
                     <div class="forecast-day-header">
                         <span>Hari ke+${f.dayOffset} (${f.dayHST} HST)</span>
-                        <span class="forecast-state-pill ${f.pillClass}">${f.statusText}</span>
+                        <span class="forecast-state-pill ${Sec.escapeHTML(f.pillClass)}">${Sec.escapeHTML(f.statusText)}</span>
                     </div>
                     <div class="forecast-maturity">
                         <span class="forecast-pct tabular-nums">${f.maturityPct}%</span>
-                        <span style="font-size: 11px; color: var(--text-muted);">kematangan</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">(GDD: ${f.projectedGDD}/${targetGDD})</span>
                     </div>
                     <div style="font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between;">
-                        <span>Estimasi Biomassa:</span>
+                        <span>Proyeksi Biomassa:</span>
                         <b class="tabular-nums" style="color: var(--text-primary);">${f.estimatedWeightGram}g / ph</b>
                     </div>
                 </div>
@@ -1307,7 +1375,7 @@
             const wrap = $('#chartSvgWrap');
             if (!wrap) return;
 
-            const allRecords = window.DatasetStore.getAll();
+            const allRecords = window.DatasetStore.getAll().filter(r => Number.isFinite(r.t));
             if (allRecords.length < 2) {
                 wrap.innerHTML = `<div class="skeleton-shimmer" style="height:100%;"></div>`;
                 return;
@@ -1335,7 +1403,7 @@
                 band = [60, 80];
             } else if (metric === 'suhu') {
                 const conv = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
-                const temps = rows.map(r => conv(r.suhu));
+                const temps = rows.map(r => conv(r.suhu)).filter(v => Number.isFinite(v));
                 yMin = Math.floor(Math.min(...temps) - 2);
                 yMax = Math.ceil(Math.max(...temps) + 2);
                 unit = S.unit === 'F' ? '°F' : '°C';
@@ -1355,7 +1423,7 @@
                 const y = getY(tickVal);
                 gridHtml += `
                     <line class="grid-line" x1="${pad.left}" y1="${y}" x2="${w - pad.right}" y2="${y}" />
-                    <text class="axis-text" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${unit}</text>
+                    <text class="axis-text" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${Sec.escapeHTML(unit)}</text>
                 `;
             }
 
@@ -1376,7 +1444,7 @@
                 const tx = t0 + f * timeSpan;
                 const x = pad.left + f * innerW;
                 const anchor = k === 0 ? 'start' : (k === 3 ? 'end' : 'middle');
-                timeLabelsHtml += `<text class="axis-text" x="${x}" y="${h - 6}" text-anchor="${anchor}">${window.DatasetStore.formatTime(tx, true)}</text>`;
+                timeLabelsHtml += `<text class="axis-text" x="${x}" y="${h - 6}" text-anchor="${anchor}">${Sec.escapeHTML(window.DatasetStore.formatTime(tx, true))}</text>`;
             }
 
             const conv = (S.unit === 'F' && metric === 'suhu') ? (v => (v * 9 / 5) + 32) : (v => v);
@@ -1428,7 +1496,8 @@
             if (!container) return;
 
             const el = document.createElement('div');
-            el.className = `toast ${variant}`;
+            el.className = `toast ${Sec.escapeHTML(variant)}`;
+            // DOM XSS DEFENSE: textContent
             el.textContent = message;
             container.appendChild(el);
 
@@ -1437,6 +1506,17 @@
                 el.style.transform = 'translateY(10px)';
                 setTimeout(() => el.remove(), 250);
             }, 3500);
+        }
+
+        destroy() {
+            if (this.offlineTimer) {
+                clearInterval(this.offlineTimer);
+                this.offlineTimer = null;
+            }
+            if (this.cam && this.cam.timer) {
+                clearTimeout(this.cam.timer);
+                this.cam.timer = null;
+            }
         }
     }
 

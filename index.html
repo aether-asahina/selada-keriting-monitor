@@ -65,6 +65,7 @@
                 <div class="system-status-box">
                     <div class="status-meta">
                         <span class="status-badge">
+                            <span class="pulse-dot" id="sysStatusDot" style="width: 8px; height: 8px; display: inline-block; margin-right: 6px; background-color: var(--accent-emerald);"></span>
                             <span id="sysStatusText">Menghubungkan…</span>
                         </span>
                         <span class="badge-tag blue" style="font-size: 10px;">v3.0</span>
@@ -199,12 +200,12 @@
                         <div class="card-body">
                             <div class="metric-value-wrap" style="align-items: center; gap: 8px;">
                                 <span class="pulse-dot" id="pumpPulseDot" style="width: 10px; height: 10px;"></span>
-                                <span class="metric-value" id="valPumpStatus" style="font-size: 22px;">MATI</span>
+                                <span class="metric-value" id="valPumpStatus" style="font-size: 22px;">PERINTAH: OFF</span>
                             </div>
-                            <span class="badge-tag blue">Histeresis</span>
+                            <span class="badge-tag blue">Histeresis Set-point</span>
                         </div>
                         <div class="metric-footer">
-                            <span id="subPumpStatus">Logika: ON &lt;65%, OFF &gt;78%</span>
+                            <span id="subPumpStatus">Logika: ON &lt;65%, OFF &gt;78% · Feedback Relay: Menunggu Data</span>
                             <span class="badge-tag emerald">Auto-Rule</span>
                         </div>
                     </article>
@@ -218,11 +219,11 @@
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
                                 Prediksi Pertumbuhan 4 Hari ke Depan
                             </h3>
-                            <p>Inferensi kematangan fisiologis selada berdasarkan akumulasi termal mikroklimat dan riwayat telemetri</p>
+                            <p>Estimasi perkembangan vegetatif selada berbasis akumulasi termal fisiologis (Growing Degree Days)</p>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span class="badge-tag blue">Model GDD & LSTM</span>
-                            <span class="badge-tag emerald">Akurasi 94.2%</span>
+                            <span class="badge-tag blue">Model Termal GDD (Tbase 4.0°C)</span>
+                            <span class="badge-tag emerald">Fisiologis Vegetatif</span>
                         </div>
                     </div>
                     <div class="pred-forecast-grid" id="predictionForecastGrid"></div>
@@ -292,9 +293,9 @@
                         <div class="ai-intro">
                             <h3>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
-                                Asisten AI Agronomi (Lactuca sativa L.)
+                                Sistem Pakar Agronomi (Lactuca sativa L.)
                             </h3>
-                            <p>Inferensi fisiologi selada keriting untuk evaluasi transpirasi, VPD, dan pencegahan tipburn</p>
+                            <p>Analisis kondisi mikroklimat berbasis aturan empiris fisiologi selada (Tetens VPD, unit termal GDD, dan panduan budidaya)</p>
                         </div>
                         <button type="button" class="btn btn-primary" id="btnDiagnoseAI">Diagnosa Otomatis Real-time</button>
                     </div>

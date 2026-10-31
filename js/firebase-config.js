@@ -1,14 +1,160 @@
 /**
  * ==============================================================================
- * MODULE: FIREBASE CONFIG & RTDB EDGE CLIENT (serverless-ai-edge compliant)
- * Endpoint: https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/
+ * MODULE: FIREBASE CONFIG, SECURITY UTILS & RTDB EDGE CLIENT
+ * Hardened for: Serverless Edge Security, Data Source Segregation, Input Sanitization
  * ==============================================================================
  */
 
 (function (window) {
     'use strict';
 
-    const CACHE_KEY = 'selada_telemetry_cache_v2';
+    // ==============================================================================
+    // 1. SECURITY & SANITIZATION UTILITIES (Zero-dependency defensive programming)
+    // ==============================================================================
+    const SecurityUtils = {
+        /**
+         * Escape HTML special characters to prevent DOM-based XSS
+         */
+        escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
+
+        /**
+         * Allowlist HTML sanitizer for trusted formatting (b, i, em, strong, br, code, span)
+         */
+        sanitizeHTML(dirty) {
+            if (!dirty || typeof dirty !== 'string') return '';
+            if (typeof DOMParser !== 'undefined') {
+                try {
+                    const doc = new DOMParser().parseFromString(dirty, 'text/html');
+                    const ALLOWED_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'BR', 'CODE', 'SPAN', 'P', 'UL', 'LI']);
+                    const ALLOWED_ATTRS = new Set(['class']);
+
+                    const cleanNode = (node) => {
+                        const children = Array.from(node.childNodes);
+                        for (const child of children) {
+                            if (child.nodeType === 1) { // Element
+                                if (!ALLOWED_TAGS.has(child.tagName)) {
+                                    const textNode = doc.createTextNode(child.textContent || '');
+                                    node.replaceChild(textNode, child);
+                                } else {
+                                    Array.from(child.attributes).forEach(attr => {
+                                        if (!ALLOWED_ATTRS.has(attr.name.toLowerCase())) {
+                                            child.removeAttribute(attr.name);
+                                        }
+                                    });
+                                    cleanNode(child);
+                                }
+                            } else if (child.nodeType === 8) { // Comment
+                                node.removeChild(child);
+                            }
+                        }
+                    };
+
+                    cleanNode(doc.body);
+                    return doc.body.innerHTML;
+                } catch {
+                    return this.escapeHTML(dirty);
+                }
+            }
+            // Fallback when DOMParser is unavailable: strip dangerous tags and script/javascript
+            let clean = dirty
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                .replace(/on\w+\s*=/gi, '')
+                .replace(/javascript:/gi, '');
+            return clean;
+        },
+
+        /**
+         * CSV Formula Injection mitigation (CWE-1236)
+         * Prepends apostrophe if text starts with dangerous formula execution triggers
+         */
+        escapeCSV(field) {
+            if (field === null || field === undefined) return '';
+            let val = String(field);
+            const DANGEROUS_PREFIXES = ['=', '+', '-', '@', '\t', '\r'];
+            if (DANGEROUS_PREFIXES.some(prefix => val.startsWith(prefix))) {
+                val = `'` + val;
+            } else if (DANGEROUS_PREFIXES.some(prefix => val.trim().startsWith(prefix))) {
+                val = `'` + val.trim();
+            }
+            if (val.includes(',') || val.includes('"') || val.includes('\n') || val.includes('\r')) {
+                val = `"` + val.replace(/"/g, '""') + `"`;
+            }
+            return val;
+        },
+
+        /**
+         * Sensor numeric validation with physical range checks
+         */
+        validateNumber(val, min, max, defaultVal = null) {
+            if (val === null || val === undefined || val === '') return defaultVal;
+            const num = Number(val);
+            if (!Number.isFinite(num) || Number.isNaN(num)) return defaultVal;
+            if (num < min || num > max) return defaultVal;
+            return num;
+        },
+
+        /**
+         * Validate telemetry timestamps (must be between year 2020 and now + 60s)
+         */
+        validateTimestamp(t, fallback = Date.now()) {
+            const num = Number(t);
+            const MIN_VALID_TIME = 1577836800000; // 2020-01-01
+            const MAX_VALID_TIME = Date.now() + 60000; // Allow 60s clock skew
+            if (!Number.isFinite(num) || num < MIN_VALID_TIME || num > MAX_VALID_TIME) {
+                return fallback;
+            }
+            return num;
+        },
+
+        /**
+         * Validate Firebase RTDB URL to prevent SSRF and protocol manipulation
+         */
+        isValidFirebaseUrl(url) {
+            if (!url || typeof url !== 'string') return false;
+            try {
+                const u = new URL(url.trim());
+                if (u.protocol !== 'https:') return false;
+                const host = u.hostname.toLowerCase();
+                return host.endsWith('.firebaseio.com') || host.endsWith('.firebasedatabase.app');
+            } catch {
+                return false;
+            }
+        },
+
+        /**
+         * Validate camera IP/hostname to prevent SSRF and malicious protocol execution
+         */
+        isValidCameraHost(raw) {
+            if (!raw || typeof raw !== 'string') return null;
+            const trimmed = raw.trim();
+            if (/^(javascript|data|file|ftp):/i.test(trimmed)) return null;
+            if (/[<>";|&`$]/.test(trimmed)) return null;
+            const host = trimmed.replace(/^https?:\/\//i, '').replace(/[\/?#].*$/, '');
+            // Reject cloud metadata link-local address (169.254.x.x)
+            if (/^169\.254\./.test(host)) return null;
+            const ipv4Regex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(:[0-9]{1,5})?$/;
+            const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*(:[0-9]{1,5})?$/;
+            if (ipv4Regex.test(host) || hostnameRegex.test(host)) {
+                return host;
+            }
+            return null;
+        }
+    };
+
+    window.SecurityUtils = SecurityUtils;
+
+    // ==============================================================================
+    // 2. CONFIGURATION STORE & PERSISTENCE
+    // ==============================================================================
+    const CACHE_KEY = 'selada_telemetry_live_cache_v3';
     const SETTINGS_KEY = 'selada-dash-v3';
 
     const DEF_SETTINGS = {
@@ -19,7 +165,7 @@
         clock: '24',
         theme: 'dark',
         forceDemo: false,
-        dry: 65, // Selada Keriting normal 65-78%
+        dry: 65, // Standard optimal range for Selada Keriting (65-78%)
         wet: 78,
         camIp: '',
         rules: {
@@ -62,7 +208,7 @@
                 console.warn('[ConfigStore] Failed to load settings from storage:', e);
             }
 
-            if (!this.S.firebase || this.S.firebase.includes('smart-farming-selada')) {
+            if (!SecurityUtils.isValidFirebaseUrl(this.S.firebase)) {
                 this.S.firebase = DEF_SETTINGS.firebase;
             }
             return this.S;
@@ -92,7 +238,7 @@
     const configManager = new ConfigStore();
     window.ConfigStore = configManager;
 
-    // Firebase 20-char push ID alphabet for timestamp decoding
+    // Firebase 20-character push ID decoder
     const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
 
     function decodePushTimestamp(id) {
@@ -115,14 +261,23 @@
         return u;
     }
 
+    // ==============================================================================
+    // 3. HARDENED FIREBASE EDGE CLIENT WITH STRICT DATA SEPARATION
+    // ==============================================================================
     class FirebaseClient {
         constructor() {
             this.listeners = [];
             this.statusListeners = [];
             this.isPolling = false;
+            this.isFetching = false; // Mutex to prevent overlapping network polls
             this.pollTimer = null;
-            this.cachedData = [];
-            this.connectionState = 'disconnected';
+            
+            // SEPARATE DATA STREAMS: Never pollute live telemetry with synthetic demo data
+            this.liveRecords = [];   // Actual verified data from Firebase RTDB
+            this.demoRecords = [];   // Pure synthetic records for demo mode only
+            this.currentSource = 'offline'; // 'live' | 'cache' | 'simulated'
+            this.connectionState = 'disconnected'; // 'connected' | 'demo' | 'offline' | 'connecting'
+
             this.demoState = { soil: 72, temp: 24.5, hum: 68, boost: 0 };
             this.loadCache();
         }
@@ -133,7 +288,9 @@
                 if (stored) {
                     const parsed = JSON.parse(stored);
                     if (Array.isArray(parsed) && parsed.length > 0) {
-                        this.cachedData = parsed;
+                        // Mark cached records with source 'cache'
+                        this.liveRecords = parsed.map(r => Object.assign({}, r, { source: 'cache' }));
+                        this.currentSource = 'cache';
                     }
                 }
             } catch (err) {
@@ -143,8 +300,10 @@
 
         saveCache() {
             try {
-                if (this.cachedData.length > 0) {
-                    const sliceToSave = this.cachedData.slice(-600);
+                // ONLY persist genuine live records to offline cache
+                const genuineRecords = this.liveRecords.filter(r => r.source === 'live' || r.source === 'cache');
+                if (genuineRecords.length > 0) {
+                    const sliceToSave = genuineRecords.slice(-600);
                     localStorage.setItem(CACHE_KEY, JSON.stringify(sliceToSave));
                 }
             } catch (err) {
@@ -152,39 +311,66 @@
             }
         }
 
-        normalizeRecord(obj, keyOrTimestamp) {
-            const time = typeof keyOrTimestamp === 'number' 
-                ? keyOrTimestamp 
+        /**
+         * Validates and normalizes raw telemetry records
+         */
+        normalizeRecord(obj, keyOrTimestamp, source = 'live') {
+            if (!obj || typeof obj !== 'object') return null;
+
+            const decodedTime = typeof keyOrTimestamp === 'number'
+                ? keyOrTimestamp
                 : (decodePushTimestamp(keyOrTimestamp) || Date.now());
+            const validatedTime = SecurityUtils.validateTimestamp(decodedTime, Date.now());
+
+            // Sensor physical boundary checks for Selada Keriting (Lactuca sativa L.)
+            const suhu = SecurityUtils.validateNumber(obj.suhu, 0, 55, null);
+            const udara = SecurityUtils.validateNumber(obj.kelembapan_udara, 5, 100, null);
+            const tanah = SecurityUtils.validateNumber(obj.kelembapan_tanah, 0, 100, null);
+
+            // If key telemetry fields are missing/corrupted, reject to prevent chart/stat poisoning
+            if (tanah === null || udara === null || suhu === null) {
+                return null;
+            }
+
+            // Check if hardware provides relay verification feedback
+            let relayFeedback = null;
+            if (obj.relay !== undefined) relayFeedback = Boolean(obj.relay);
+            else if (obj.pompa !== undefined) relayFeedback = Boolean(obj.pompa);
+            else if (obj.status_relay !== undefined) relayFeedback = Boolean(obj.status_relay);
 
             return {
-                id: typeof keyOrTimestamp === 'string' ? keyOrTimestamp : 'rec_' + time,
-                t: time,
-                suhu: Number(obj.suhu !== undefined ? obj.suhu : 24.5),
-                udara: Number(obj.kelembapan_udara !== undefined ? obj.kelembapan_udara : 68),
-                tanah: Number(obj.kelembapan_tanah !== undefined ? obj.kelembapan_tanah : 72),
-                statusRaw: obj.status || ''
+                id: typeof keyOrTimestamp === 'string' ? SecurityUtils.escapeHTML(keyOrTimestamp) : 'rec_' + validatedTime,
+                t: validatedTime,
+                suhu: Number(suhu.toFixed(1)),
+                udara: Math.round(udara),
+                tanah: Math.round(tanah),
+                statusRaw: SecurityUtils.escapeHTML(obj.status || ''),
+                source: source, // 'live' | 'cache' | 'simulated'
+                relayActual: relayFeedback // Verified relay feedback or null if unmeasured
             };
         }
 
-        parseDatabaseResponse(json) {
+        parseDatabaseResponse(json, source = 'live') {
             if (!json || typeof json !== 'object') return [];
-            
+
+            // Single object payload
             if (json.suhu !== undefined && json.kelembapan_tanah !== undefined) {
-                return [this.normalizeRecord(json, Date.now())];
+                const norm = this.normalizeRecord(json, Date.now(), source);
+                return norm ? [norm] : [];
             }
 
+            // Nested inside 'kelompok2'
             if (json.kelompok2 && typeof json.kelompok2 === 'object') {
-                return this.parseDatabaseResponse(json.kelompok2);
+                return this.parseDatabaseResponse(json.kelompok2, source);
             }
 
             const rows = [];
             const keys = Object.keys(json).sort();
             for (const key of keys) {
                 const item = json[key];
-                if (item && typeof item === 'object' && item.kelembapan_tanah !== undefined) {
-                    const parsed = this.normalizeRecord(item, key);
-                    if (Number.isFinite(parsed.tanah) && parsed.tanah >= 0) {
+                if (item && typeof item === 'object') {
+                    const parsed = this.normalizeRecord(item, key, source);
+                    if (parsed) {
                         rows.push(parsed);
                     }
                 }
@@ -193,13 +379,20 @@
         }
 
         async fetchRows(url, n, signalMs = 6000) {
+            const S = configManager.get();
+            const target = url || S.firebase;
+
+            if (!SecurityUtils.isValidFirebaseUrl(target)) {
+                throw new Error('URL Firebase tidak valid atau domain tidak diizinkan');
+            }
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), signalMs);
-            const targetUrl = normalizeUrl(url || configManager.get().firebase);
+            const reqUrl = normalizeUrl(target);
 
             try {
                 const query = `?orderBy=${encodeURIComponent('"$key"')}&limitToLast=${encodeURIComponent(n)}`;
-                const response = await fetch(targetUrl + query, {
+                const response = await fetch(reqUrl + query, {
                     signal: controller.signal,
                     cache: 'no-store'
                 });
@@ -209,7 +402,7 @@
                 }
 
                 const json = await response.json();
-                return this.parseDatabaseResponse(json);
+                return this.parseDatabaseResponse(json, 'live');
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -217,6 +410,9 @@
 
         async testConnection(url) {
             try {
+                if (!SecurityUtils.isValidFirebaseUrl(url)) {
+                    return { ok: false, error: 'URL Firebase harus berakhiran .firebaseio.com atau .firebasedatabase.app' };
+                }
                 const rows = await this.fetchRows(url, 1, 6000);
                 return {
                     ok: true,
@@ -226,11 +422,14 @@
             } catch (err) {
                 return {
                     ok: false,
-                    error: err.message
+                    error: SecurityUtils.escapeHTML(err.message)
                 };
             }
         }
 
+        // ==============================================================================
+        // SYNTHETIC DEMO GENERATOR (Strictly isolated in demoRecords buffer)
+        // ==============================================================================
         demoStep(t) {
             const S = configManager.get();
             const pump = this.demoState.soil < S.dry;
@@ -248,12 +447,14 @@
             this.demoState.hum += (Math.random() - 0.5) * 0.5 + (68 - this.demoState.hum) * 0.03;
 
             return {
-                id: 'demo_' + t,
+                id: 'sim_' + t,
                 t: t,
                 suhu: Number(this.demoState.temp.toFixed(1)),
                 udara: Math.round(this.demoState.hum),
                 tanah: Math.round(this.demoState.soil),
-                statusRaw: this.demoState.soil < S.dry ? 'Kering' : (this.demoState.soil > S.wet ? 'Basah' : 'Optimal')
+                statusRaw: this.demoState.soil < S.dry ? 'Kering' : (this.demoState.soil > S.wet ? 'Basah' : 'Optimal'),
+                source: 'simulated',
+                relayActual: pump // Simulated relay state
             };
         }
 
@@ -265,71 +466,118 @@
             return rows;
         }
 
+        // ==============================================================================
+        // POLLING ENGINE WITH RACE-CONDITION MUTEX
+        // ==============================================================================
         async pollCycle() {
             if (!this.isPolling) return;
             const S = configManager.get();
 
-            if (S.forceDemo) {
-                const rows = this.demoRows(Math.max(1, Math.round(S.poll / 1000)));
-                this.mergeData(rows);
-                this.connectionState = 'demo';
-                this.notifyStatus('demo', 'Mode Data Contoh Aktif');
-            } else {
-                try {
-                    const n = this.cachedData.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - this.getLatest().t) / 1000) + 6)) : S.fetchN;
+            // Prevent polling overlap if previous fetch takes longer than interval
+            if (this.isFetching) {
+                this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
+                return;
+            }
+
+            this.isFetching = true;
+
+            try {
+                if (S.forceDemo) {
+                    this.currentSource = 'simulated';
+                    this.connectionState = 'demo';
+                    const simRows = this.demoRows(Math.max(1, Math.round(S.poll / 1000)));
+                    this.mergeDemoData(simRows);
+                    this.notifyStatus('demo', 'Mode Simulasi (Data Sintetis/Demo)');
+                } else {
+                    const lastRec = this.getLatestGenuine();
+                    const n = this.liveRecords.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - (lastRec ? lastRec.t : Date.now())) / 1000) + 6)) : S.fetchN;
+                    
                     const rows = await this.fetchRows(S.firebase, n);
 
                     if (rows.length > 0) {
-                        this.mergeData(rows);
+                        this.currentSource = 'live';
                         this.connectionState = 'connected';
-                        this.notifyStatus('connected', 'Langsung dari Firebase RTDB');
-                    } else if (this.cachedData.length === 0) {
-                        // If completely empty, seed demo
-                        const fallback = this.demoRows(60);
-                        this.mergeData(fallback);
+                        this.mergeLiveData(rows);
+                        this.notifyStatus('connected', 'Telemetri Live (Firebase RTDB)');
+                    } else if (this.liveRecords.length === 0) {
+                        // Firebase reachable but completely empty
+                        this.currentSource = 'simulated';
                         this.connectionState = 'demo';
-                        this.notifyStatus('demo', 'Data contoh (Firebase kosong)');
-                    }
-                } catch (err) {
-                    if (this.cachedData.length === 0) {
-                        const fallback = this.demoRows(60);
-                        this.mergeData(fallback);
-                        this.connectionState = 'fallback';
-                        this.notifyStatus('fallback', 'Data contoh (Firebase offline)');
-                    } else {
-                        this.connectionState = 'offline';
-                        this.notifyStatus('offline', 'Firebase terputus · Menggunakan offline cache');
-                        const sim = this.demoStep(Date.now());
-                        this.mergeData([sim]);
+                        this.mergeDemoData(this.demoRows(60));
+                        this.notifyStatus('demo', 'Data Simulasi (Firebase Kosong)');
                     }
                 }
+            } catch (err) {
+                if (this.liveRecords.length > 0) {
+                    // Fallback to genuine cached records
+                    this.currentSource = 'cache';
+                    this.connectionState = 'offline';
+                    this.notifyStatus('offline', 'Offline Cache (Jaringan Terputus)');
+                    // Trigger UI update using cached records
+                    this.notifyData(this.liveRecords, []);
+                } else {
+                    // No cache at all: present simulation explicitly
+                    this.currentSource = 'simulated';
+                    this.connectionState = 'demo';
+                    this.mergeDemoData(this.demoRows(60));
+                    this.notifyStatus('demo', 'Data Simulasi (Firebase Offline)');
+                }
+            } finally {
+                this.isFetching = false;
+                if (this.isPolling) {
+                    this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
+                }
             }
-
-            this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
         }
 
-        mergeData(newRows) {
+        mergeLiveData(newRows) {
             if (!Array.isArray(newRows) || newRows.length === 0) return;
 
-            const existingTimes = new Set(this.cachedData.map(r => r.t));
+            const existingTimes = new Set(this.liveRecords.map(r => r.t));
             let added = [];
 
             for (const row of newRows) {
                 if (!existingTimes.has(row.t)) {
-                    this.cachedData.push(row);
-                    added.push(row);
+                    this.liveRecords.push(row);
                     existingTimes.add(row.t);
+                    added.push(row);
                 }
             }
 
-            this.cachedData.sort((a, b) => a.t - b.t);
-            if (this.cachedData.length > 3600) {
-                this.cachedData = this.cachedData.slice(-3600);
+            // Chronological sort
+            this.liveRecords.sort((a, b) => a.t - b.t);
+            if (this.liveRecords.length > 3600) {
+                this.liveRecords = this.liveRecords.slice(-3600);
             }
 
             if (added.length > 0) {
                 this.saveCache();
-                this.notifyData(this.cachedData, added);
+                this.notifyData(this.liveRecords, added);
+            }
+        }
+
+        mergeDemoData(newRows) {
+            if (!Array.isArray(newRows) || newRows.length === 0) return;
+
+            const existingTimes = new Set(this.demoRecords.map(r => r.t));
+            let added = [];
+
+            for (const row of newRows) {
+                if (!existingTimes.has(row.t)) {
+                    this.demoRecords.push(row);
+                    existingTimes.add(row.t);
+                    added.push(row);
+                }
+            }
+
+            this.demoRecords.sort((a, b) => a.t - b.t);
+            if (this.demoRecords.length > 600) {
+                this.demoRecords = this.demoRecords.slice(-600);
+            }
+
+            if (added.length > 0) {
+                // NEVER save demoRecords to localStorage
+                this.notifyData(this.demoRecords, added);
             }
         }
 
@@ -342,6 +590,7 @@
 
         stop() {
             this.isPolling = false;
+            this.isFetching = false;
             if (this.pollTimer) {
                 clearTimeout(this.pollTimer);
                 this.pollTimer = null;
@@ -350,15 +599,17 @@
 
         restart() {
             this.stop();
-            this.cachedData = [];
+            this.liveRecords = [];
+            this.demoRecords = [];
             this.start();
         }
 
         subscribe(callback) {
             if (typeof callback === 'function') {
                 this.listeners.push(callback);
-                if (this.cachedData.length > 0) {
-                    callback(this.cachedData, [this.cachedData[this.cachedData.length - 1]]);
+                const currentData = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
+                if (currentData.length > 0) {
+                    callback(currentData, [currentData[currentData.length - 1]], this.currentSource);
                 }
             }
             return () => {
@@ -369,7 +620,7 @@
         subscribeStatus(callback) {
             if (typeof callback === 'function') {
                 this.statusListeners.push(callback);
-                callback(this.connectionState, '');
+                callback(this.connectionState, '', this.currentSource);
             }
             return () => {
                 this.statusListeners = this.statusListeners.filter(cb => cb !== callback);
@@ -379,7 +630,7 @@
         notifyData(allData, addedRows) {
             for (const listener of this.listeners) {
                 try {
-                    listener(allData, addedRows);
+                    listener(allData, addedRows, this.currentSource);
                 } catch (e) {
                     console.error('[FirebaseClient] Listener error:', e);
                 }
@@ -389,21 +640,29 @@
         notifyStatus(state, message) {
             for (const listener of this.statusListeners) {
                 try {
-                    listener(state, message);
+                    listener(state, message, this.currentSource);
                 } catch (e) {
                     console.error('[FirebaseClient] Status listener error:', e);
                 }
             }
         }
 
+        getLatestGenuine() {
+            return this.liveRecords.length > 0 ? this.liveRecords[this.liveRecords.length - 1] : null;
+        }
+
         getLatest() {
-            return this.cachedData.length > 0 
-                ? this.cachedData[this.cachedData.length - 1] 
-                : null;
+            const data = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
+            return data.length > 0 ? data[data.length - 1] : null;
         }
 
         getAll() {
-            return this.cachedData.slice();
+            const data = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
+            return data.slice();
+        }
+
+        getSource() {
+            return this.currentSource;
         }
     }
 
