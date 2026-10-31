@@ -1,0 +1,19 @@
+# System & OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE & Editor configurations
+.vscode/
+.idea/
+
+# Temporary data & Logs
+*.log
+*.tmp
+.env
+.env.local
+
+# Dependency artifacts (if added later)
+node_modules/

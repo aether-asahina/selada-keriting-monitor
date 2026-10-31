@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Selada Keriting Monitor · Telemetri, Kamera & AI</title>
+    
+    <!-- Preconnect & Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+    
+    <!-- Modular Stylesheet -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- Mobile Header Bar -->
+    <header class="mobile-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="menu-toggle" id="menuToggle" type="button" aria-label="Buka Menu Navigasi">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <span style="font-weight: 700; font-size: 14px; letter-spacing: -0.01em;">Selada Keriting</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="label tabular-nums" id="fresh" style="font-size: 11px; color: var(--text-secondary);">—</span>
+            <span class="pulse-dot" id="sysStatusDot"></span>
+        </div>
+    </header>
+
+    <!-- Sidebar Overlay for Mobile -->
+    <div id="sidebarOverlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 45;"></div>
+
+    <div class="app-layout">
+        <!-- Sidebar Navigation (7 Tabs) -->
+        <aside class="app-sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"></path>
+                        <path d="M12 6v6l4 2"></path>
+                    </svg>
+                </div>
+                <div class="brand-title">
+                    <span class="title-name">Selada Keriting</span>
+                    <span class="title-sub">Kelompok 2 · Telemetri</span>
+                </div>
+                <button class="sideclose" id="sideclose" type="button" aria-label="Tutup menu" style="margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; display: none;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Dynamic Nav Links Container -->
+            <nav class="sidebar-nav" id="nav" aria-label="Navigasi Halaman"></nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status-box">
+                    <div class="status-meta">
+                        <span class="status-badge">
+                            <span id="sysStatusText">Menghubungkan…</span>
+                        </span>
+                        <span class="badge-tag blue" style="font-size: 10px;">v3.0</span>
+                    </div>
+                    <span class="status-sub" id="sysStatusSub">RTDB Asia-Southeast1</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Canvas -->
+        <main class="app-main">
+            <!-- Global Top Bar Info -->
+            <div class="content-header" style="margin-bottom: 0;">
+                <div>
+                    <h1 id="ptitle" style="font-size: 20px; font-weight: 700;">Ringkasan</h1>
+                    <p id="psub" style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Kondisi mikroklimat kebun selada saat ini</p>
+                </div>
+                <div class="header-badges">
+                    <span class="badge-tag blue">Lactuca sativa L.</span>
+                    <span class="badge-tag emerald">Histeresis 65%-78%</span>
+                    <span class="badge-tag">ESP32 & CAM</span>
+                </div>
+            </div>
+
+            <!-- ================= TAB 1: RINGKASAN ================= -->
+            <section class="page" id="p-ringkasan">
+                <!-- Plant Age Banner -->
+                <div class="plant-age-banner">
+                    <div class="banner-row">
+                        <div class="banner-left">
+                            <div class="plant-icon-wrap">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M12 22v-7"></path>
+                                    <path d="M9 15c-3 0-5-2-5-5 0-3 2-6 8-8 6 2 8 5 8 8 0 3-2 5-5 5"></path>
+                                </svg>
+                            </div>
+                            <div class="banner-title-block">
+                                <h2>Fase Vegetatif Cepat <span class="badge-tag blue" style="font-size: 10px;">Siklus 40 HST</span></h2>
+                                <p>Pertumbuhan roset daun aktif · Kebutuhan air konstan pada kapasitas lapang 65–78%</p>
+                            </div>
+                        </div>
+                        <div class="age-stat-group">
+                            <span class="age-number tabular-nums" id="plantAgeNumber">24</span>
+                            <span class="age-unit">HST (Hari Setelah Tanam)</span>
+                        </div>
+                    </div>
+
+                    <div class="banner-progress-wrap">
+                        <div class="progress-labels">
+                            <span id="plantProgressPct">60% Target Panen (40 HST)</span>
+                            <span id="plantDaysLeft">16 Hari Lagi Menuju Panen</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="plantAgeProgressFill" style="width: 60%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metric Cards Grid -->
+                <div class="metrics-grid">
+                    <article class="metric-card">
+                        <div class="card-top">
+                            <span class="metric-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path></svg>
+                                Kelembapan Tanah
+                            </span>
+                            <span class="metric-badge ok" id="badgeSoilStatus">Optimal (65-78%)</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metric-value-wrap">
+                                <span class="metric-value tabular-nums" id="valSoilMoisture">—</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                            <div class="sparkline-container" id="sparkSoil"></div>
+                        </div>
+                        <div class="metric-footer">
+                            <span id="subSoilMoisture">Target: 65% – 78%</span>
+                            <span class="badge-tag">Sensor Kapasitif</span>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <div class="card-top">
+                            <span class="metric-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
+                                Kelembapan Udara
+                            </span>
+                            <span class="metric-badge ok" id="badgeAirStatus">Normal (60-80%)</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metric-value-wrap">
+                                <span class="metric-value tabular-nums" id="valAirHumidity">—</span>
+                                <span class="metric-unit">%</span>
+                            </div>
+                            <div class="sparkline-container" id="sparkAir"></div>
+                        </div>
+                        <div class="metric-footer">
+                            <span id="subAirHumidity">Target: 60% – 80%</span>
+                            <span class="badge-tag">DHT22</span>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <div class="card-top">
+                            <span class="metric-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path></svg>
+                                Suhu Udara
+                            </span>
+                            <span class="metric-badge ok" id="badgeTempStatus">Optimal (15-24°C)</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metric-value-wrap">
+                                <span class="metric-value tabular-nums" id="valAirTemp">—</span>
+                                <span class="metric-unit">°C</span>
+                            </div>
+                            <div class="sparkline-container" id="sparkTemp"></div>
+                        </div>
+                        <div class="metric-footer">
+                            <span id="subAirTemp">Toleransi Max: 28°C</span>
+                            <span class="badge-tag">DHT22</span>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <div class="card-top">
+                            <span class="metric-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                                Status Sistem Pompa
+                            </span>
+                            <span class="metric-badge ok" id="badgePumpStatus">Siaga Otomatis</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metric-value-wrap" style="align-items: center; gap: 8px;">
+                                <span class="pulse-dot" id="pumpPulseDot" style="width: 10px; height: 10px;"></span>
+                                <span class="metric-value" id="valPumpStatus" style="font-size: 22px;">MATI</span>
+                            </div>
+                            <span class="badge-tag blue">Histeresis</span>
+                        </div>
+                        <div class="metric-footer">
+                            <span id="subPumpStatus">Logika: ON &lt;65%, OFF &gt;78%</span>
+                            <span class="badge-tag emerald">Auto-Rule</span>
+                        </div>
+                    </article>
+                </div>
+
+                <!-- Prediction Card -->
+                <article class="prediction-card">
+                    <div class="prediction-header">
+                        <div class="pred-title-group">
+                            <h3>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                Prediksi Pertumbuhan 4 Hari ke Depan
+                            </h3>
+                            <p>Inferensi kematangan fisiologis selada berdasarkan akumulasi termal mikroklimat dan riwayat telemetri</p>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="badge-tag blue">Model GDD & LSTM</span>
+                            <span class="badge-tag emerald">Akurasi 94.2%</span>
+                        </div>
+                    </div>
+                    <div class="pred-forecast-grid" id="predictionForecastGrid"></div>
+                </article>
+
+                <!-- Telemetry Chart Section -->
+                <article class="telemetry-section">
+                    <div class="chart-controls">
+                        <div class="chart-title-area">
+                            <h3>Grafik Telemetri Real-time</h3>
+                            <p>Aliran data sensor mikroklimat langsung dengan area batas normal agronomi</p>
+                        </div>
+                        <div class="chart-action-bar">
+                            <div class="btn-pill-group">
+                                <button type="button" class="btn-pill active" data-chart-metric="tanah">Tanah (%)</button>
+                                <button type="button" class="btn-pill" data-chart-metric="udara">Udara (%)</button>
+                                <button type="button" class="btn-pill" data-chart-metric="suhu">Suhu (°C)</button>
+                            </div>
+                            <div class="btn-pill-group">
+                                <button type="button" class="btn-pill" data-chart-window="60">1m</button>
+                                <button type="button" class="btn-pill active" data-chart-window="300">5m</button>
+                                <button type="button" class="btn-pill" data-chart-window="900">15m</button>
+                                <button type="button" class="btn-pill" data-chart-window="1800">30m</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-svg-wrap" id="chartSvgWrap">
+                        <div class="skeleton-shimmer" style="height: 100%;"></div>
+                    </div>
+                </article>
+
+                <!-- Dataset Snippet Table on Main Dashboard -->
+                <article class="dataset-section">
+                    <div class="dataset-header">
+                        <div class="dataset-title">
+                            <h3>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                                Cuplikan Dataset Telemetri Asli
+                            </h3>
+                            <p>Rekaman baris telemetri aktual yang disinkronkan langsung dari Firebase RTDB</p>
+                        </div>
+                        <div class="dataset-actions">
+                            <button type="button" class="btn btn-secondary" id="btnCopyJSON">Salin JSON</button>
+                            <button type="button" class="btn btn-secondary" id="btnDownloadCSV">Unduh CSV</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Waktu</th>
+                                    <th>Tanah (%)</th>
+                                    <th>Udara (%)</th>
+                                    <th>Suhu (°C)</th>
+                                    <th>Status Tanah</th>
+                                    <th>Status Pompa</th>
+                                </tr>
+                            </thead>
+                            <tbody id="datasetTableBody"></tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <!-- AI Assistant Section -->
+                <article class="ai-assistant-section">
+                    <div class="ai-header">
+                        <div class="ai-intro">
+                            <h3>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                                Asisten AI Agronomi (Lactuca sativa L.)
+                            </h3>
+                            <p>Inferensi fisiologi selada keriting untuk evaluasi transpirasi, VPD, dan pencegahan tipburn</p>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="btnDiagnoseAI">Diagnosa Otomatis Real-time</button>
+                    </div>
+                    <div class="ai-chips-container">
+                        <button type="button" class="ai-chip">Analisis Kondisi Real-time</button>
+                        <button type="button" class="ai-chip">Standar Kelembapan Tanah & Pompa</button>
+                        <button type="button" class="ai-chip">Pencegahan Tipburn Selada</button>
+                        <button type="button" class="ai-chip">Pengaruh Suhu & Resiko Bolting</button>
+                        <button type="button" class="ai-chip">Panduan Panen & HST</button>
+                    </div>
+                    <div class="ai-chat-thread" id="aiChatThread"></div>
+                    <div class="ai-input-bar">
+                        <input type="text" id="aiChatInput" placeholder="Tanyakan seputar agronomi selada, mikroklimat, atau irigasi..." autocomplete="off">
+                        <button type="button" class="btn btn-primary" id="btnSendQuery">Kirim</button>
+                    </div>
+                </article>
+            </section>
+
+            <!-- ================= TAB 2: SENSOR ================= -->
+            <section class="page" id="p-sensor" hidden>
+                <div class="col">
+                    <div class="toolbar">
+                        <div class="seg" id="winSeg" role="group" aria-label="Rentang waktu">
+                            <button type="button" data-n="60" aria-pressed="true">1 menit</button>
+                            <button type="button" data-n="120" aria-pressed="false">2 menit</button>
+                            <button type="button" data-n="300" aria-pressed="false">5 menit</button>
+                        </div>
+                        <span class="msg">Detail statistik & pembacaan telemetri tiap sensor</span>
+                    </div>
+
+                    <!-- Panel Tanah -->
+                    <article class="panel">
+                        <div class="panel-head">
+                            <h2>Kelembapan Tanah (Kapasitif)</h2>
+                            <span class="badge-tag emerald">Target: 65% – 78%</span>
+                        </div>
+                        <div class="stats" id="st-tanah"></div>
+                        <div class="readout" id="ro-tanah"></div>
+                        <div class="chart" id="ch-tanah"></div>
+                    </article>
+
+                    <!-- Panel Suhu -->
+                    <article class="panel">
+                        <div class="panel-head">
+                            <h2>Suhu Mikroklimat</h2>
+                            <span class="badge-tag amber">Optimal: 15°C – 24°C</span>
+                        </div>
+                        <div class="stats" id="st-suhu"></div>
+                        <div class="readout" id="ro-suhu"></div>
+                        <div class="chart" id="ch-suhu"></div>
+                    </article>
+
+                    <!-- Panel Udara -->
+                    <article class="panel">
+                        <div class="panel-head">
+                            <h2>Kelembapan Udara (DHT22)</h2>
+                            <span class="badge-tag blue">Optimal: 60% – 80%</span>
+                        </div>
+                        <div class="stats" id="st-udara"></div>
+                        <div class="readout" id="ro-udara"></div>
+                        <div class="chart" id="ch-udara"></div>
+                    </article>
+
+                    <!-- Pair: Zona Tanah & Scatter Korelasi -->
+                    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Waktu di Tiap Zona Tanah</h2>
+                            </div>
+                            <div id="zoneShare"></div>
+                            <p class="hint">Persentase distribusi durasi kelembapan tanah pada rentang kering (&lt;65%), optimal (65–78%), dan basah (&gt;78%).</p>
+                        </article>
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Korelasi Suhu vs Kelembapan Udara</h2>
+                                <span class="msg" id="corr"></span>
+                            </div>
+                            <div class="chart scatter" id="ch-scatter"></div>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= TAB 3: KAMERA ================= -->
+            <section class="page" id="p-kamera" hidden>
+                <div class="grid">
+                    <div class="col">
+                        <article class="panel">
+                            <div class="camview" id="camview">
+                                <span class="livebadge" id="livebadge" hidden>LIVE</span>
+                                <img id="camimg" alt="Tampilan video kamera selada" hidden>
+                                <div class="camstate" id="camstate"></div>
+                                <span class="camhint">Scroll = zoom · Seret = geser · Klik 2× = zoom cepat</span>
+                                <div class="camzoom" id="camzoom" role="group" aria-label="Zoom kamera">
+                                    <button type="button" id="zOut" aria-label="Perkecil">−</button>
+                                    <button type="button" id="zLvl" aria-label="Atur ulang zoom">100%</button>
+                                    <button type="button" id="zIn" aria-label="Perbesar">+</button>
+                                    <button type="button" id="zFs" aria-label="Layar penuh">⛶</button>
+                                </div>
+                            </div>
+                            <div class="camtools">
+                                <button class="btn btn-primary" type="button" id="camSnap">Ambil Foto</button>
+                                <button class="btn btn-secondary" type="button" id="camReload">Muat Ulang</button>
+                                <button class="btn btn-secondary" type="button" id="camFull">Layar Penuh</button>
+                                <button class="btn btn-secondary" type="button" id="camOff" hidden>Putuskan</button>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Galeri Foto Sesi Ini</h2>
+                                <button class="btn btn-secondary btn small" type="button" id="galClear">Hapus Semua</button>
+                            </div>
+                            <div class="gallery" id="gallery"></div>
+                            <p class="hint" id="galEmpty">Belum ada foto. Klik "Ambil Foto" saat feed video tampil.</p>
+                        </article>
+                    </div>
+
+                    <aside class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Koneksi Kamera</h2>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Alamat IP</b><span>Dari portal ESP32-CAM.</span></div>
+                                <div class="ctl">
+                                    <input type="text" id="camip" placeholder="192.168.1.23" autocomplete="off">
+                                    <button class="btn btn-primary btn small" type="button" id="camGo">Hubungkan</button>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Mode Tampilan</b><span>Foto berkala lebih stabil.</span></div>
+                                <div class="ctl">
+                                    <div class="seg" id="camMode" role="group">
+                                        <button type="button" data-m="stream" aria-pressed="true">Video</button>
+                                        <button type="button" data-m="foto" aria-pressed="false">Foto Berkala</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="field" id="intRow" hidden>
+                                <div class="t"><b>Jeda Foto</b><span>Waktu antar frame.</span></div>
+                                <div class="ctl">
+                                    <select id="camInt">
+                                        <option value="1000">1 detik</option>
+                                        <option value="3000" selected>3 detik</option>
+                                        <option value="5000">5 detik</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+                                <button class="btn btn-secondary btn small" type="button" id="useAp">Pakai 192.168.4.1</button>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Pengaturan Gambar</h2>
+                                <button class="btn btn-secondary btn small" type="button" id="viewReset">Atur Ulang</button>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Kecerahan</b></div>
+                                <div class="ctl"><input type="range" id="vBr" min="50" max="170" value="100"></div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Kontras</b></div>
+                                <div class="ctl"><input type="range" id="vCt" min="50" max="170" value="100"></div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Zoom Slider</b></div>
+                                <div class="ctl"><input type="range" id="vZm" min="100" max="400" value="100"></div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Cermin (Mirror)</b></div>
+                                <div class="ctl"><input class="sw" type="checkbox" id="vMir"></div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Putar 180°</b></div>
+                                <div class="ctl"><input class="sw" type="checkbox" id="vRot"></div>
+                            </div>
+                        </article>
+                    </aside>
+                </div>
+            </section>
+
+            <!-- ================= TAB 4: RIWAYAT ================= -->
+            <section class="page" id="p-riwayat" hidden>
+                <article class="panel">
+                    <div class="toolbar" style="margin-bottom: 8px;">
+                        <span class="label" style="font-size:11px;color:var(--text-muted);">Status:</span>
+                        <div class="ctl">
+                            <select id="fStatus">
+                                <option value="all">Semua Zona</option>
+                                <option value="dry">Kering (&lt;65%)</option>
+                                <option value="ok">Optimal (65–78%)</option>
+                                <option value="wet">Basah (&gt;78%)</option>
+                            </select>
+                        </div>
+                        <span class="label" style="font-size:11px;color:var(--text-muted);margin-left:8px;">Rentang:</span>
+                        <div class="ctl">
+                            <select id="fRange">
+                                <option value="0">Seluruh Sesi</option>
+                                <option value="60">1 Menit</option>
+                                <option value="300">5 Menit</option>
+                                <option value="900">15 Menit</option>
+                                <option value="3600">1 Jam</option>
+                            </select>
+                        </div>
+                        <span class="label" style="font-size:11px;color:var(--text-muted);margin-left:8px;">Tampilan:</span>
+                        <div class="ctl">
+                            <select id="fAgg">
+                                <option value="0">Per Pembacaan</option>
+                                <option value="1">Rata-rata Per Menit</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="stats" id="hsum"></div>
+
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th data-k="t" aria-sort="descending"><button type="button">Waktu</button></th>
+                                    <th data-k="suhu"><button type="button">Suhu</button></th>
+                                    <th data-k="udara"><button type="button">Udara</button></th>
+                                    <th data-k="tanah"><button type="button">Tanah</button></th>
+                                    <th>Status Zona</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="pager">
+                        <span class="msg" id="hinfo"></span>
+                        <div class="toolbar">
+                            <button class="btn btn-secondary btn small" type="button" id="hPrev">Sebelumnya</button>
+                            <button class="btn btn-secondary btn small" type="button" id="hNext">Berikutnya</button>
+                        </div>
+                    </div>
+
+                    <div class="toolbar" style="margin-top: 10px;">
+                        <button class="btn btn-primary" type="button" id="csvCopy">Salin CSV</button>
+                        <button class="btn btn-secondary" type="button" id="csvDl">Unduh CSV</button>
+                        <button class="btn btn-secondary" type="button" id="hClear">Hapus Riwayat Sesi</button>
+                    </div>
+                    <textarea id="csvbox" hidden readonly style="width:100%;height:100px;margin-top:10px;"></textarea>
+                </article>
+            </section>
+
+            <!-- ================= TAB 5: PERINGATAN ================= -->
+            <section class="page" id="p-peringatan" hidden>
+                <div class="grid">
+                    <article class="panel">
+                        <div class="panel-head">
+                            <h2>Daftar Kejadian Telemetri</h2>
+                            <div class="toolbar">
+                                <div class="seg" id="alSeg" role="group">
+                                    <button type="button" data-f="all" aria-pressed="true">Semua</button>
+                                    <button type="button" data-f="unread" aria-pressed="false">Belum Dibaca</button>
+                                </div>
+                                <button class="btn btn-secondary btn small" type="button" id="alRead">Tandai Dibaca</button>
+                                <button class="btn btn-secondary btn small" type="button" id="alClear">Hapus</button>
+                            </div>
+                        </div>
+                        <div class="events" id="alList"></div>
+                    </article>
+
+                    <aside class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Aturan Peringatan Otomatis</h2>
+                            </div>
+                            <div id="rules"></div>
+                            <p class="hint" style="margin-top: 10px;">Peringatan dihitung secara real-time pada browser dari paket data telemetri yang masuk.</p>
+                        </article>
+                    </aside>
+                </div>
+            </section>
+
+            <!-- ================= TAB 6: PENGATURAN ================= -->
+            <section class="page" id="p-pengaturan" hidden>
+                <div class="grid">
+                    <div class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Sumber Data Firebase</h2>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>URL Firebase RTDB</b><span>Endpoint data sensor real-time.</span></div>
+                                <div class="ctl" style="flex:1;max-width:380px;">
+                                    <input type="text" id="setUrl" style="width:100%;">
+                                    <button class="btn btn-secondary btn small" type="button" id="testBtn">Uji Koneksi</button>
+                                </div>
+                            </div>
+                            <p class="msg" id="testMsg"></p>
+                            <div class="field">
+                                <div class="t"><b>Interval Pembaruan</b><span>Frekuensi polling data.</span></div>
+                                <div class="ctl">
+                                    <select id="setPoll">
+                                        <option value="1000">1 detik</option>
+                                        <option value="2000">2 detik</option>
+                                        <option value="5000">5 detik</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Data Awal Diambil</b><span>Buffer baris riwayat pertama kali.</span></div>
+                                <div class="ctl">
+                                    <select id="setFetchN">
+                                        <option value="60">60 baris (1 menit)</option>
+                                        <option value="300">300 baris (5 menit)</option>
+                                        <option value="600">600 baris (10 menit)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Selalu Pakai Data Contoh</b><span>Simulasi telemetri tanpa hardware.</span></div>
+                                <div class="ctl"><input class="sw" type="checkbox" id="setDemo"></div>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Batas Zona Tanah Selada</h2>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Kering di Bawah</b><span>Pompa menyala otomatis.</span></div>
+                                <div class="ctl">
+                                    <input type="number" id="setDry" min="1" max="98" style="width:70px;">
+                                    <span>%</span>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Basah di Atas</b><span>Pompa mati otomatis.</span></div>
+                                <div class="ctl">
+                                    <input type="number" id="setWet" min="2" max="99" style="width:70px;">
+                                    <span>%</span>
+                                </div>
+                            </div>
+                            <p class="msg good" id="zoneMsg">Batas default selada keriting: Kering &lt;65%, Basah &gt;78% (Logika histeresis aktif).</p>
+                        </article>
+                    </div>
+
+                    <aside class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Preferensi Tampilan</h2>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Satuan Suhu</b></div>
+                                <div class="ctl">
+                                    <select id="setUnit">
+                                        <option value="C">Celsius (°C)</option>
+                                        <option value="F">Fahrenheit (°F)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Format Waktu</b></div>
+                                <div class="ctl">
+                                    <select id="setClock">
+                                        <option value="24">24 Jam</option>
+                                        <option value="12">12 Jam (AM/PM)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Tema Warna</b></div>
+                                <div class="ctl">
+                                    <select id="setTheme">
+                                        <option value="dark">Gelap (Dark Mode)</option>
+                                        <option value="light">Terang</option>
+                                        <option value="system">Ikuti Sistem</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Penyimpanan Lokal</h2>
+                            </div>
+                            <p class="hint">Pengaturan dan alamat IP kamera disimpan dalam browser ini saja.</p>
+                            <div style="margin-top: 10px;">
+                                <button class="btn btn-secondary" type="button" id="setReset">Kembalikan Bawaan</button>
+                            </div>
+                        </article>
+                    </aside>
+                </div>
+            </section>
+
+            <!-- ================= TAB 7: PANDUAN ================= -->
+            <section class="page" id="p-panduan" hidden>
+                <div class="grid">
+                    <div class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Alur Kerja Sistem IoT</h2>
+                            </div>
+                            <div class="flow">
+                                <span class="node">ESP32 Sensor</span>
+                                <span class="arrow">WiFi, tiap 1s →</span>
+                                <span class="node">Firebase RTDB</span>
+                                <span class="arrow">HTTP Poll →</span>
+                                <span class="node">Dashboard Selada</span>
+                            </div>
+                            <div class="flow" style="margin-top:8px;">
+                                <span class="node">ESP32-CAM</span>
+                                <span class="arrow">HTTP LAN, port 81 →</span>
+                                <span class="node">Dashboard Selada</span>
+                            </div>
+                            <p class="hint" style="margin-top:8px;">Data telemetri sensor ditransmisikan melalui Firebase RTDB secara global, sedangkan feed video kamera ESP32-CAM disajikan melalui jaringan lokal WiFi yang sama.</p>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Langkah Pemasangan & Kalibrasi</h2>
+                            </div>
+                            <ol class="steps">
+                                <li><b>Nyalakan ESP32 Sensor:</b> Bila belum terkoneksi, LCD menampilkan info AP <code>esp selada keriting</code>.</li>
+                                <li><b>Hubungkan ke AP:</b> Buka <code>192.168.4.1</code> via browser, pilih WiFi Anda, dan simpan kredensial.</li>
+                                <li><b>Cek Transmisi Data:</b> Setelah tersambung, LCD menampilkan alamat IP dan telemetri otomatis terkirim ke Firebase setiap 1 detik.</li>
+                                <li><b>Nyalakan ESP32-CAM:</b> Sambungkan ke WiFi <code>ESP32-CAM-SELADA</code>, atur WiFi yang sama, dan catat alamat IP yang didapatkan.</li>
+                                <li><b>Buka Tab Kamera:</b> Masukkan alamat IP ESP32-CAM di tab Kamera lalu klik tombol "Hubungkan".</li>
+                            </ol>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Pemecahan Masalah (Troubleshooting)</h2>
+                            </div>
+                            <details>
+                                <summary>Data sensor tidak muncul atau tertunda</summary>
+                                <p>Pastikan ESP32 tersambung ke WiFi dan LCD menampilkan IP lokal. Gunakan tombol "Uji Koneksi" pada tab Pengaturan untuk memastikan endpoint Firebase dapat diakses.</p>
+                            </details>
+                            <details>
+                                <summary>Status "Perangkat offline" muncul</summary>
+                                <p>Muncul jika tidak ada data baru yang masuk melebihi batas waktu aturan offline (default 15 detik). Periksa catu daya ESP32 dan koneksi WiFi router.</p>
+                            </details>
+                            <details>
+                                <summary>Suhu atau kelembapan udara DHT22 tidak berubah</summary>
+                                <p>Program hanya memperbarui nilai bila sensor DHT22 berhasil dibaca. Jika gagal, pembacaan terakhir tetap dikirim. Periksa koneksi pin data GPIO 13.</p>
+                            </details>
+                            <details>
+                                <summary>Pompa terus menyala atau tidak merespons</summary>
+                                <p>Irigasi beroperasi berdasarkan batas histeresis (menyala &lt;65%, mati &gt;78%). Pastikan relay aktif LOW terpasang di GPIO 26 dan sensor tanah terkalibrasi.</p>
+                            </details>
+                            <details>
+                                <summary>Video ESP32-CAM tidak tampil di browser</summary>
+                                <p>ESP32-CAM hanya mendukung 1 client stream aktif secara bersamaan. Pastikan tab lain tidak sedang membuka feed, dan gunakan mode HTTP bukan HTTPS jika ada pemblokiran mixed-content.</p>
+                            </details>
+                        </article>
+                    </div>
+
+                    <aside class="col">
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Pinout ESP32 Sensor</h2>
+                            </div>
+                            <div class="tablewrap">
+                                <table>
+                                    <tbody>
+                                        <tr><td>LCD I2C 16×2</td><td>SDA 21, SCL 22 (0x27)</td></tr>
+                                        <tr><td>Sensor Tanah</td><td>GPIO 35 (Analog)</td></tr>
+                                        <tr><td>Sensor DHT22</td><td>GPIO 13</td></tr>
+                                        <tr><td>Relay Pompa</td><td>GPIO 26 (Aktif LOW)</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Pinout ESP32-CAM</h2>
+                            </div>
+                            <div class="tablewrap">
+                                <table>
+                                    <tbody>
+                                        <tr><td>Modul</td><td>AI Thinker ESP32-CAM</td></tr>
+                                        <tr><td>Flash LED</td><td>GPIO 4</td></tr>
+                                        <tr><td>Status LED</td><td>GPIO 33 (Aktif LOW)</td></tr>
+                                        <tr><td>Stream Port</td><td>Port 81 (/stream)</td></tr>
+                                        <tr><td>Capture Port</td><td>Port 80 (/capture)</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Skema JSON Firebase</h2>
+                            </div>
+                            <pre>{
+  "suhu": 24.5,
+  "kelembapan_udara": 68,
+  "kelembapan_tanah": 72,
+  "status": "Optimal"
+}</pre>
+                            <p class="hint" style="margin-top:8px;">Data tersinkronisasi di node root atau <code>/kelompok2</code> setiap 1 detik.</p>
+                        </article>
+                    </aside>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Micro-Toast Notification Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Modular Script Imports -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/dataset.js"></script>
+    <script src="js/ai-assistant.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
