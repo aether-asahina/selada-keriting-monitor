@@ -164,7 +164,6 @@
         unit: 'C',
         clock: '24',
         theme: 'dark',
-        forceDemo: false,
         dry: 65, // Standard optimal range for Selada Keriting (65-78%)
         wet: 78,
         camIp: '',
@@ -272,13 +271,11 @@
             this.isFetching = false; // Mutex to prevent overlapping network polls
             this.pollTimer = null;
             
-            // SEPARATE DATA STREAMS: Never pollute live telemetry with synthetic demo data
+            // 100% REAL DATA DISCIPLINE: Only genuine live telemetry or genuine offline cache
             this.liveRecords = [];   // Actual verified data from Firebase RTDB
-            this.demoRecords = [];   // Pure synthetic records for demo mode only
-            this.currentSource = 'offline'; // 'live' | 'cache' | 'simulated'
-            this.connectionState = 'disconnected'; // 'connected' | 'demo' | 'offline' | 'connecting'
+            this.currentSource = 'offline'; // 'live' | 'cache' | 'offline'
+            this.connectionState = 'disconnected'; // 'connected' | 'empty' | 'offline' | 'connecting' | 'disconnected'
 
-            this.demoState = { soil: 72, temp: 24.5, hum: 68, boost: 0 };
             this.loadCache();
         }
 
@@ -345,7 +342,7 @@
                 udara: Math.round(udara),
                 tanah: Math.round(tanah),
                 statusRaw: SecurityUtils.escapeHTML(obj.status || ''),
-                source: source, // 'live' | 'cache' | 'simulated'
+                source: source, // 'live' | 'cache'
                 relayActual: relayFeedback // Verified relay feedback or null if unmeasured
             };
         }
@@ -428,46 +425,7 @@
         }
 
         // ==============================================================================
-        // SYNTHETIC DEMO GENERATOR (Strictly isolated in demoRecords buffer)
-        // ==============================================================================
-        demoStep(t) {
-            const S = configManager.get();
-            const pump = this.demoState.soil < S.dry;
-            if (pump) {
-                this.demoState.soil += 1.0 + Math.random() * 0.5;
-                this.demoState.boost = 8;
-            } else if (this.demoState.boost > 0) {
-                this.demoState.soil += 0.4;
-                this.demoState.boost--;
-            } else {
-                this.demoState.soil -= 0.08 + Math.random() * 0.08;
-            }
-            this.demoState.soil = Math.max(20, Math.min(95, this.demoState.soil));
-            this.demoState.temp += (Math.random() - 0.5) * 0.2 + (24.5 - this.demoState.temp) * 0.03;
-            this.demoState.hum += (Math.random() - 0.5) * 0.5 + (68 - this.demoState.hum) * 0.03;
-
-            return {
-                id: 'sim_' + t,
-                t: t,
-                suhu: Number(this.demoState.temp.toFixed(1)),
-                udara: Math.round(this.demoState.hum),
-                tanah: Math.round(this.demoState.soil),
-                statusRaw: this.demoState.soil < S.dry ? 'Kering' : (this.demoState.soil > S.wet ? 'Basah' : 'Optimal'),
-                source: 'simulated',
-                relayActual: pump // Simulated relay state
-            };
-        }
-
-        demoRows(n) {
-            const now = Date.now(), rows = [];
-            for (let i = n - 1; i >= 0; i--) {
-                rows.push(this.demoStep(now - i * 1000));
-            }
-            return rows;
-        }
-
-        // ==============================================================================
-        // POLLING ENGINE WITH RACE-CONDITION MUTEX
+        // POLLING ENGINE WITH RACE-CONDITION MUTEX (100% REAL DATA ONLY)
         // ==============================================================================
         async pollCycle() {
             if (!this.isPolling) return;
@@ -482,30 +440,22 @@
             this.isFetching = true;
 
             try {
-                if (S.forceDemo) {
-                    this.currentSource = 'simulated';
-                    this.connectionState = 'demo';
-                    const simRows = this.demoRows(Math.max(1, Math.round(S.poll / 1000)));
-                    this.mergeDemoData(simRows);
-                    this.notifyStatus('demo', 'Mode Simulasi (Data Sintetis/Demo)');
-                } else {
-                    const lastRec = this.getLatestGenuine();
-                    const n = this.liveRecords.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - (lastRec ? lastRec.t : Date.now())) / 1000) + 6)) : S.fetchN;
-                    
-                    const rows = await this.fetchRows(S.firebase, n);
+                const lastRec = this.getLatestGenuine();
+                const n = this.liveRecords.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - (lastRec ? lastRec.t : Date.now())) / 1000) + 6)) : S.fetchN;
+                
+                const rows = await this.fetchRows(S.firebase, n);
 
-                    if (rows.length > 0) {
-                        this.currentSource = 'live';
-                        this.connectionState = 'connected';
-                        this.mergeLiveData(rows);
-                        this.notifyStatus('connected', 'Telemetri Live (Firebase RTDB)');
-                    } else if (this.liveRecords.length === 0) {
-                        // Firebase reachable but completely empty
-                        this.currentSource = 'simulated';
-                        this.connectionState = 'demo';
-                        this.mergeDemoData(this.demoRows(60));
-                        this.notifyStatus('demo', 'Data Simulasi (Firebase Kosong)');
-                    }
+                if (rows.length > 0) {
+                    this.currentSource = 'live';
+                    this.connectionState = 'connected';
+                    this.mergeLiveData(rows);
+                    this.notifyStatus('connected', 'Telemetri Live (Firebase RTDB)');
+                } else if (this.liveRecords.length === 0) {
+                    // Firebase reachable but completely empty of physical telemetry
+                    this.currentSource = 'live';
+                    this.connectionState = 'empty';
+                    this.notifyStatus('empty', 'Firebase RTDB Kosong (Belum Ada Telemetri Sensor)');
+                    this.notifyData([], []);
                 }
             } catch (err) {
                 if (this.liveRecords.length > 0) {
@@ -513,14 +463,14 @@
                     this.currentSource = 'cache';
                     this.connectionState = 'offline';
                     this.notifyStatus('offline', 'Offline Cache (Jaringan Terputus)');
-                    // Trigger UI update using cached records
+                    // Trigger UI update using cached genuine records
                     this.notifyData(this.liveRecords, []);
                 } else {
-                    // No cache at all: present simulation explicitly
-                    this.currentSource = 'simulated';
-                    this.connectionState = 'demo';
-                    this.mergeDemoData(this.demoRows(60));
-                    this.notifyStatus('demo', 'Data Simulasi (Firebase Offline)');
+                    // No cache at all: display genuine disconnected state (Zero synthetic fallback)
+                    this.currentSource = 'offline';
+                    this.connectionState = 'disconnected';
+                    this.notifyStatus('disconnected', 'OFFLINE / DISCONNECTED (Firebase Tidak Terjangkau)');
+                    this.notifyData([], []);
                 }
             } finally {
                 this.isFetching = false;
@@ -556,31 +506,6 @@
             }
         }
 
-        mergeDemoData(newRows) {
-            if (!Array.isArray(newRows) || newRows.length === 0) return;
-
-            const existingTimes = new Set(this.demoRecords.map(r => r.t));
-            let added = [];
-
-            for (const row of newRows) {
-                if (!existingTimes.has(row.t)) {
-                    this.demoRecords.push(row);
-                    existingTimes.add(row.t);
-                    added.push(row);
-                }
-            }
-
-            this.demoRecords.sort((a, b) => a.t - b.t);
-            if (this.demoRecords.length > 600) {
-                this.demoRecords = this.demoRecords.slice(-600);
-            }
-
-            if (added.length > 0) {
-                // NEVER save demoRecords to localStorage
-                this.notifyData(this.demoRecords, added);
-            }
-        }
-
         start() {
             if (this.isPolling) return;
             this.isPolling = true;
@@ -600,16 +525,14 @@
         restart() {
             this.stop();
             this.liveRecords = [];
-            this.demoRecords = [];
             this.start();
         }
 
         subscribe(callback) {
             if (typeof callback === 'function') {
                 this.listeners.push(callback);
-                const currentData = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
-                if (currentData.length > 0) {
-                    callback(currentData, [currentData[currentData.length - 1]], this.currentSource);
+                if (this.liveRecords.length > 0) {
+                    callback(this.liveRecords, [this.liveRecords[this.liveRecords.length - 1]], this.currentSource);
                 }
             }
             return () => {
@@ -652,13 +575,11 @@
         }
 
         getLatest() {
-            const data = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
-            return data.length > 0 ? data[data.length - 1] : null;
+            return this.liveRecords.length > 0 ? this.liveRecords[this.liveRecords.length - 1] : null;
         }
 
         getAll() {
-            const data = this.currentSource === 'simulated' ? this.demoRecords : this.liveRecords;
-            return data.slice();
+            return this.liveRecords.slice();
         }
 
         getSource() {

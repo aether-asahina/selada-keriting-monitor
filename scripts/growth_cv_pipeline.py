@@ -289,65 +289,31 @@ class LettuceCVPipeline:
         except Exception as e:
             print(f"[LettuceCVPipeline] Failed to append metadata: {e}", file=sys.stderr)
 
-# ----------------------------------------------------------------------------
-# Synthetic Plant Generator for Offline Testing & Verification
-# ----------------------------------------------------------------------------
-def generate_synthetic_lettuce_image(width=640, height=480, canopy_radius=110, leaf_count=14, noise_level=0.04, is_dark=False, is_blur=False):
-    """
-    Generates a realistic curly lettuce rosette for automated testing and calibration.
-    """
-    img = Image.new("RGB", (width, height), (38, 28, 20)) # Peat substrate background
-    draw = ImageDraw.Draw(img)
-
-    # Draw substrate texture dots
-    np.random.seed(42)
-    for _ in range(400):
-        rx, ry = np.random.randint(0, width), np.random.randint(0, height)
-        draw.point((rx, ry), fill=(48, 38, 28))
-
-    cx, cy = width // 2, height // 2
-
-    # Draw curly lettuce leaves radiating from center
-    for i in range(leaf_count):
-        angle = (i / leaf_count) * 2 * math.pi + (np.random.rand() * 0.2)
-        leaf_len = canopy_radius * (0.75 + np.random.rand() * 0.4)
-        leaf_w = canopy_radius * (0.35 + np.random.rand() * 0.2)
-
-        tip_x = cx + leaf_len * math.cos(angle)
-        tip_y = cy + leaf_len * math.sin(angle)
-        side_x1 = cx + (leaf_w) * math.cos(angle + math.pi / 2)
-        side_y1 = cy + (leaf_w) * math.sin(angle + math.pi / 2)
-        side_x2 = cx + (leaf_w) * math.cos(angle - math.pi / 2)
-        side_y2 = cy + (leaf_w) * math.sin(angle - math.pi / 2)
-
-        green_shade = (
-            int(35 + np.random.rand() * 25),
-            int(155 + np.random.rand() * 65), # Rich chlorophyl green
-            int(45 + np.random.rand() * 25)
-        )
-        draw.polygon([(cx, cy), (side_x1, side_y1), (tip_x, tip_y), (side_x2, side_y2)], fill=green_shade)
-
-    if is_dark:
-        # Darken by 90%
-        arr = np.array(img).astype(np.float32) * 0.08
-        img = Image.fromarray(arr.astype(np.uint8))
-
-    if is_blur:
-        img = img.filter(ImageFilter.GaussianBlur(radius=8))
-
-    return img
-
-
 if __name__ == "__main__":
-    print("[LettuceCVPipeline] Initializing Computer Vision Engine...")
+    print(f"[LettuceCVPipeline] Initializing Computer Vision Engine (Algo: v1.2-exg-otsu)...")
     pipeline = LettuceCVPipeline()
 
-    # Generate and process a test plant image
-    sample_img = generate_synthetic_lettuce_image(width=640, height=480, canopy_radius=120)
-    res = pipeline.process_image(sample_img, plant_id="SLD-01", hst_day=24)
-    print(f"[LettuceCVPipeline] Verification Passed:")
-    print(f"  - Image ID       : {res['image_id']}")
-    print(f"  - Leaf Width     : {res['leaf_width_px']} px")
-    print(f"  - Leaf Area      : {res['leaf_area_px']} px²")
-    print(f"  - Quality Status : {res['quality_status']}")
-    print(f"  - Artifacts Saved: {res['image_url']}, {res['mask_url']}, {res['overlay_url']}")
+    if len(sys.argv) > 1 and sys.argv[1] not in ("--help", "-h"):
+        img_path = sys.argv[1]
+        plant_id = sys.argv[2] if len(sys.argv) > 2 else "SLD-01"
+        hst = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+
+        if os.path.exists(img_path):
+            print(f"[LettuceCVPipeline] Processing genuine captured image: {img_path}")
+            res = pipeline.process_image(img_path, plant_id=plant_id, hst_day=hst)
+            print(f"[LettuceCVPipeline] Result:")
+            print(f"  - Image ID       : {res['image_id']}")
+            print(f"  - Leaf Width     : {res['leaf_width_px']} px")
+            print(f"  - Leaf Area      : {res['leaf_area_px']} px²")
+            print(f"  - Quality Status : {res['quality_status']} ({res['quality_detail']})")
+            print(f"  - Original Saved : {res['image_url']}")
+            print(f"  - Mask Saved     : {res['mask_url']}")
+            print(f"  - Overlay Saved  : {res['overlay_url']}")
+        else:
+            print(f"[LettuceCVPipeline] Error: Image file not found: {img_path}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("[LettuceCVPipeline] Pipeline Engine Ready (100% Real Data Mode - Zero Synthetic Generation).")
+        print("Usage: python3 scripts/growth_cv_pipeline.py <path_to_genuine_image.jpg> [plant_id] [hst_day]")
+        print("Scheduled automated captures are executed via scripts/scheduler_daemon.py.")
+

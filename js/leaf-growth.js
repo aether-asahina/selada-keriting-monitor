@@ -82,43 +82,12 @@
                 console.warn('[LeafGrowth] Could not load data/growth_metadata.json:', err);
             }
 
-            // If empty, initialize with default campaign state
+            // If empty, maintain genuine empty state (Zero Synthetic Data)
             if (this.records.length === 0) {
-                this.loadFallbackDemoRecords();
+                this.records = [];
             }
 
             this.notify();
-        }
-
-        loadFallbackDemoRecords() {
-            // Minimal baseline records if offline or local file protocol
-            const baseTs = Date.now() - (24 * 86400000);
-            const sample = [];
-            for (let day = 1; day <= 24; day++) {
-                const ts = baseTs + (day * 86400000);
-                const w = Math.round(35 + (210 - 35) / (1 + Math.exp(-0.16 * (day - 14))));
-                const a = Math.round(w * w * 0.42);
-                sample.push({
-                    image_id: `img_hst_${day}`,
-                    plant_id: CAMPAIGN_SPEC.defaultPlantId,
-                    captured_at: ts,
-                    time_wib: this.formatWIBTime(ts),
-                    hst_day: day,
-                    leaf_width_px: w,
-                    leaf_width_mm: this.calibRatio ? Math.round(w * this.calibRatio * 10) / 10 : null,
-                    leaf_area_px: a,
-                    leaf_area_mm2: this.calibRatio ? Math.round(a * (this.calibRatio ** 2)) : null,
-                    quality_status: (day === 8 || day === 16) ? 'INVALID_BLUR' : 'VALID',
-                    quality_detail: (day === 8 || day === 16) ? 'Pencahayaan rendah' : 'Kualitas tajam',
-                    processing_status: (day === 8 || day === 16) ? 'FAILED' : 'COMPLETED',
-                    camera_id: 'ESP32-CAM-01',
-                    algorithm_version: 'v1.2-exg-otsu',
-                    image_url: 'data/growth_images/img_20261031_163538_orig.jpg',
-                    mask_url: 'data/growth_images/img_20261031_163538_mask.png',
-                    overlay_url: 'data/growth_images/img_20261031_163538_overlay.jpg'
-                });
-            }
-            this.records = sample;
         }
 
         normalizeGrowthRecord(raw) {
@@ -253,7 +222,26 @@
                 if (camHost && window.SecurityUtils && window.SecurityUtils.isValidCameraHost(camHost)) {
                     capturedRecord = await this.fetchCameraSnapshot(camHost);
                 } else {
-                    capturedRecord = this.generateSimulatedCaptureRecord();
+                    console.log(`[LeafGrowth] Capture slot ${slotKey}: Host ESP32-CAM belum diatur/tidak valid. Mencatat status offline.`);
+                    capturedRecord = {
+                        image_id: `err_${Date.now()}`,
+                        plant_id: CAMPAIGN_SPEC.defaultPlantId,
+                        captured_at: Date.now(),
+                        time_wib: this.formatWIBTime(Date.now()),
+                        hst_day: this.currentHST,
+                        leaf_width_px: 0,
+                        leaf_width_mm: null,
+                        leaf_area_px: 0,
+                        leaf_area_mm2: null,
+                        quality_status: 'INVALID_OFFLINE',
+                        quality_detail: 'Host ESP32-CAM belum dikonfigurasi di Pengaturan',
+                        processing_status: 'FAILED',
+                        camera_id: 'ESP32-CAM-01',
+                        algorithm_version: 'v1.2-exg-otsu',
+                        image_url: '',
+                        mask_url: '',
+                        overlay_url: ''
+                    };
                 }
 
                 if (capturedRecord) {
@@ -273,7 +261,7 @@
                     leaf_area_px: 0,
                     leaf_area_mm2: null,
                     quality_status: 'INVALID_OFFLINE',
-                    quality_detail: 'Kamera ESP32-CAM tidak merespons / jaringan timeout',
+                    quality_detail: 'Kamera ESP32-CAM offline / timeout jaringan',
                     processing_status: 'FAILED',
                     camera_id: 'ESP32-CAM-01',
                     algorithm_version: 'v1.2-exg-otsu',
@@ -298,51 +286,26 @@
 
             if (!res.ok) throw new Error(`Camera returned HTTP ${res.status}`);
 
+            // Note: In browser context, CV image segmentation is executed via scripts/scheduler_daemon.py
             const now = Date.now();
             return {
-                image_id: `img_${now}`,
+                image_id: `cap_${now}`,
                 plant_id: CAMPAIGN_SPEC.defaultPlantId,
                 captured_at: now,
                 time_wib: this.formatWIBTime(now),
                 hst_day: this.currentHST,
-                leaf_width_px: 188,
-                leaf_width_mm: this.calibRatio ? Math.round(188 * this.calibRatio * 10) / 10 : null,
-                leaf_area_px: 12878,
-                leaf_area_mm2: this.calibRatio ? Math.round(12878 * (this.calibRatio ** 2)) : null,
-                quality_status: 'VALID',
-                quality_detail: 'Snapshot langsung ESP32-CAM tervalidasi',
-                processing_status: 'COMPLETED',
+                leaf_width_px: 0,
+                leaf_width_mm: null,
+                leaf_area_px: 0,
+                leaf_area_mm2: null,
+                quality_status: 'PENDING_CV',
+                quality_detail: 'Snapshot citra fisik diterima, jalankan scheduler daemon Python untuk pemrosesan kontur',
+                processing_status: 'PENDING',
                 camera_id: 'ESP32-CAM-01',
                 algorithm_version: 'v1.2-exg-otsu',
                 image_url: snapshotUrl,
-                mask_url: 'data/growth_images/img_20261031_163538_mask.png',
-                overlay_url: 'data/growth_images/img_20261031_163538_overlay.jpg'
-            };
-        }
-
-        generateSimulatedCaptureRecord() {
-            const now = Date.now();
-            const w = Math.round(186 + (Math.random() * 4 - 2));
-            const a = Math.round(w * w * 0.40 + (Math.random() * 200 - 100));
-
-            return {
-                image_id: `img_${now}`,
-                plant_id: CAMPAIGN_SPEC.defaultPlantId,
-                captured_at: now,
-                time_wib: this.formatWIBTime(now),
-                hst_day: this.currentHST,
-                leaf_width_px: w,
-                leaf_width_mm: this.calibRatio ? Math.round(w * this.calibRatio * 10) / 10 : null,
-                leaf_area_px: a,
-                leaf_area_mm2: this.calibRatio ? Math.round(a * (this.calibRatio ** 2)) : null,
-                quality_status: 'VALID',
-                quality_detail: 'Capture terjadwal tervalidasi',
-                processing_status: 'COMPLETED',
-                camera_id: 'ESP32-CAM-01',
-                algorithm_version: 'v1.2-exg-otsu',
-                image_url: 'data/growth_images/img_20261031_163538_orig.jpg',
-                mask_url: 'data/growth_images/img_20261031_163538_mask.png',
-                overlay_url: 'data/growth_images/img_20261031_163538_overlay.jpg'
+                mask_url: '',
+                overlay_url: ''
             };
         }
 
@@ -493,7 +456,13 @@
             }
 
             if (filtered.length === 0) {
-                grid.innerHTML = '<p class="hint" style="grid-column: 1/-1; padding: 24px; text-align: center;">Tidak ada foto untuk filter yang dipilih.</p>';
+                grid.innerHTML = `
+                    <div class="gallery-empty-state" style="grid-column: 1/-1; padding: 40px 16px; text-align: center; color: var(--text-muted);">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 8px; opacity: 0.6;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                        <p style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Belum Ada Tangkapan Citra Aktual</p>
+                        <p style="font-size: 11px;">Kamera ESP32-CAM belum terhubung di LAN atau belum ada jadwal capture aktif (07:00–16:50 WIB). Target: 1.600 gambar valid.</p>
+                    </div>
+                `;
                 return;
             }
 
@@ -502,7 +471,7 @@
                 let imgSrc = r.overlay_url;
                 if (this.activeViewMode === 'mask' && r.mask_url) imgSrc = r.mask_url;
                 else if (this.activeViewMode === 'orig' && r.image_url) imgSrc = r.image_url;
-                if (!imgSrc) imgSrc = 'data/growth_images/img_20261031_163538_orig.jpg';
+                if (!imgSrc) imgSrc = '';
 
                 const badgeClass = isValid ? 'emerald' : 'rose';
                 const statusText = isValid ? 'VALID' : 'REJECT QC';
@@ -510,7 +479,7 @@
                 return `
                     <div class="gallery-card" data-img-id="${Sec.escapeHTML(r.image_id)}">
                         <div class="gallery-card-thumb">
-                            <img src="${Sec.escapeHTML(imgSrc)}" alt="${Sec.escapeHTML(r.image_id)}" loading="lazy">
+                            ${imgSrc ? `<img src="${Sec.escapeHTML(imgSrc)}" alt="${Sec.escapeHTML(r.image_id)}" loading="lazy">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#050811;color:var(--text-muted);font-size:11px;">Tidak Ada Gambar</div>'}
                             <span class="gallery-card-badge ${badgeClass}">${Sec.escapeHTML(statusText)}</span>
                         </div>
                         <div class="gallery-card-info">
@@ -549,9 +518,9 @@
             const elDetail = document.getElementById('modalQCDetail');
 
             if (elId) elId.textContent = `Pemeriksaan Segmentasi: ${record.image_id}`;
-            if (elOrig) elOrig.src = record.image_url || 'data/growth_images/img_20261031_163538_orig.jpg';
-            if (elMask) elMask.src = record.mask_url || 'data/growth_images/img_20261031_163538_mask.png';
-            if (elOverlay) elOverlay.src = record.overlay_url || 'data/growth_images/img_20261031_163538_overlay.jpg';
+            if (elOrig) elOrig.src = record.image_url || '';
+            if (elMask) elMask.src = record.mask_url || '';
+            if (elOverlay) elOverlay.src = record.overlay_url || '';
 
             if (elWidth) elWidth.textContent = `${record.leaf_width_px} px`;
             if (elArea) elArea.textContent = `${record.leaf_area_px} px²`;
@@ -570,35 +539,96 @@
             if (modal) modal.classList.remove('open');
         }
 
-        // ================= RESPONSIVE SVG CHARTS =================
+        renderEmptyChartState(elementId, message = 'Menunggu data pengukuran aktual...') {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.innerHTML = `
+                <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-muted); font-size: 11px; padding: 12px; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="opacity: 0.5;"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                    <span>${Sec.escapeHTML(message)}</span>
+                </div>
+            `;
+        }
+
+        // ================= RESPONSIVE SVG CHARTS (100% REAL DATA ONLY) =================
         renderGrowthCharts() {
             const valid = this.records.filter(r => r.quality_status === 'VALID').sort((a, b) => a.captured_at - b.captured_at);
-            if (valid.length === 0) return;
+            if (valid.length === 0) {
+                this.renderEmptyChartState('growthWidthChart', 'Belum ada data lebar daun aktual');
+                this.renderEmptyChartState('growthAreaChart', 'Belum ada data luas daun aktual');
+                this.renderEmptyChartState('growthRateChart', 'Belum ada data laju pertumbuhan aktual');
+                this.renderEmptyChartState('growthGddChart', 'Belum ada telemetri suhu fisik');
+                return;
+            }
 
             this.renderGrowthSVGChart('growthWidthChart', valid, r => r.leaf_width_px, 'px', '#3b82f6');
             this.renderGrowthSVGChart('growthAreaChart', valid, r => r.leaf_area_px, 'px²', '#10b981');
-            this.renderGrowthSVGChart('growthRateChart', valid, (r, i, arr) => {
-                if (i === 0) return 4;
-                const prev = arr[i - 1];
-                const dt = Math.max(0.1, (r.captured_at - prev.captured_at) / 86400000);
-                return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
-            }, 'px/h', '#f59e0b');
-            this.renderGrowthSVGChart('growthGddChart', valid, (r, i) => Math.round(18 * (r.hst_day || (i + 1))), '°C·h', '#3b82f6');
+
+            if (valid.length < 2) {
+                this.renderEmptyChartState('growthRateChart', 'Memerlukan minimal 2 capture tervalidasi untuk menghitung laju');
+            } else {
+                this.renderGrowthSVGChart('growthRateChart', valid, (r, i, arr) => {
+                    if (i === 0) return 0;
+                    const prev = arr[i - 1];
+                    const dt = Math.max(0.01, (r.captured_at - prev.captured_at) / 86400000);
+                    return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
+                }, 'px/hari', '#f59e0b');
+            }
+
+            // GDD from genuine microclimate telemetry if available
+            const teleRecords = (window.DatasetStore ? window.DatasetStore.getAll() : []).filter(r => Number.isFinite(r.suhu));
+            if (teleRecords.length === 0) {
+                this.renderEmptyChartState('growthGddChart', 'Menunggu telemetri suhu fisik (DHT22)');
+            } else {
+                // Compute true thermal heat units accumulated per slot
+                let accGDD = 0;
+                const gddData = valid.map((r, i) => {
+                    // Find closest telemetry record before capture time
+                    const match = teleRecords.filter(t => t.t <= r.captured_at).pop() || teleRecords[0];
+                    const dayHeat = Math.max(0, match.suhu - 4.0);
+                    accGDD += dayHeat / 144; // 10-minute slot contribution
+                    return Math.round(accGDD * 10) / 10;
+                });
+                this.renderGrowthSVGChart('growthGddChart', valid, (r, i) => gddData[i], '°C·h', '#3b82f6');
+            }
         }
 
         renderMiniDashboardCharts() {
             const valid = this.records.filter(r => r.quality_status === 'VALID').sort((a, b) => a.captured_at - b.captured_at);
-            if (valid.length === 0) return;
+            if (valid.length === 0) {
+                this.renderEmptyChartState('miniChartWidth', 'Belum ada data');
+                this.renderEmptyChartState('miniChartArea', 'Belum ada data');
+                this.renderEmptyChartState('miniChartGrowthRate', 'Belum ada data');
+                this.renderEmptyChartState('miniChartGDD', 'Belum ada data');
+                return;
+            }
 
             this.renderGrowthSVGChart('miniChartWidth', valid, r => r.leaf_width_px, 'px', '#3b82f6');
             this.renderGrowthSVGChart('miniChartArea', valid, r => r.leaf_area_px, 'px²', '#10b981');
-            this.renderGrowthSVGChart('miniChartGrowthRate', valid, (r, i, arr) => {
-                if (i === 0) return 4;
-                const prev = arr[i - 1];
-                const dt = Math.max(0.1, (r.captured_at - prev.captured_at) / 86400000);
-                return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
-            }, 'px/h', '#f59e0b');
-            this.renderGrowthSVGChart('miniChartGDD', valid, (r, i) => Math.round(18 * (r.hst_day || (i + 1))), '°C·h', '#3b82f6');
+
+            if (valid.length < 2) {
+                this.renderEmptyChartState('miniChartGrowthRate', 'Min. 2 titik');
+            } else {
+                this.renderGrowthSVGChart('miniChartGrowthRate', valid, (r, i, arr) => {
+                    if (i === 0) return 0;
+                    const prev = arr[i - 1];
+                    const dt = Math.max(0.01, (r.captured_at - prev.captured_at) / 86400000);
+                    return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
+                }, 'px/h', '#f59e0b');
+            }
+
+            const teleRecords = (window.DatasetStore ? window.DatasetStore.getAll() : []).filter(r => Number.isFinite(r.suhu));
+            if (teleRecords.length === 0) {
+                this.renderEmptyChartState('miniChartGDD', 'Menunggu sensor');
+            } else {
+                let accGDD = 0;
+                const gddData = valid.map((r, i) => {
+                    const match = teleRecords.filter(t => t.t <= r.captured_at).pop() || teleRecords[0];
+                    accGDD += Math.max(0, match.suhu - 4.0) / 144;
+                    return Math.round(accGDD * 10) / 10;
+                });
+                this.renderGrowthSVGChart('miniChartGDD', valid, (r, i) => gddData[i], '°C·h', '#3b82f6');
+            }
         }
 
         renderGrowthSVGChart(elementId, rows, valFn, unit, color) {
@@ -614,6 +644,18 @@
             const values = rows.map((r, i) => valFn(r, i, rows));
             const minVal = Math.min(...values);
             const maxVal = Math.max(...values, minVal + 1);
+
+            if (rows.length === 1) {
+                const singleY = pad.top + innerH / 2;
+                el.innerHTML = `
+                    <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
+                        <line x1="${pad.left}" y1="${singleY}" x2="${w - pad.right}" y2="${singleY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="2 2" />
+                        <circle cx="${w / 2}" cy="${singleY}" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.5" />
+                        <text x="${w / 2}" y="${singleY - 10}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="middle">${values[0]} ${unit}</text>
+                    </svg>
+                `;
+                return;
+            }
 
             const getX = i => pad.left + (i / Math.max(1, rows.length - 1)) * innerW;
             const getY = v => pad.top + (1 - (v - minVal) / (maxVal - minVal)) * innerH;

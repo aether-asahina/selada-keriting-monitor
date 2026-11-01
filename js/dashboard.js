@@ -401,7 +401,6 @@
             const setUrl = $('#setUrl');
             const setPoll = $('#setPoll');
             const setFetchN = $('#setFetchN');
-            const setDemo = $('#setDemo');
             const setUnit = $('#setUnit');
             const setClock = $('#setClock');
             const setTheme = $('#setTheme');
@@ -431,13 +430,6 @@
             if (setFetchN) setFetchN.addEventListener('change', (e) => {
                 const S = window.ConfigStore.get();
                 S.fetchN = Number(e.target.value);
-                window.ConfigStore.save();
-                window.FirebaseEdgeClient.restart();
-            });
-
-            if (setDemo) setDemo.addEventListener('change', (e) => {
-                const S = window.ConfigStore.get();
-                S.forceDemo = e.target.checked;
                 window.ConfigStore.save();
                 window.FirebaseEdgeClient.restart();
             });
@@ -1205,16 +1197,24 @@
             const dot = $('#sysStatusDot');
             const text = $('#sysStatusText');
             const sub = $('#sysStatusSub');
+            const dotHeader = $('#sysStatusDotHeader');
+            const textHeader = $('#sysStatusTextHeader');
 
             let sourceLabel = 'Telemetri Live';
             let color = 'var(--accent-emerald)';
 
-            if (source === 'simulated' || state === 'demo') {
-                sourceLabel = 'Mode Simulasi (Data Demo)';
-                color = 'var(--accent-blue)';
-            } else if (source === 'cache' || state === 'offline') {
-                sourceLabel = 'Offline Cache (Jaringan Terputus)';
+            if (state === 'empty') {
+                sourceLabel = 'RTDB Kosong (No Data)';
                 color = 'var(--accent-amber)';
+            } else if (source === 'cache' || state === 'offline') {
+                sourceLabel = 'Offline Cache';
+                color = 'var(--accent-amber)';
+            } else if (state === 'disconnected') {
+                sourceLabel = 'OFFLINE / DISCONNECTED';
+                color = 'var(--accent-rose)';
+            } else if (state === 'connecting') {
+                sourceLabel = 'Menghubungkan…';
+                color = 'var(--accent-blue)';
             }
 
             if (dot) {
@@ -1225,7 +1225,13 @@
                 text.textContent = sourceLabel;
             }
             if (sub) {
-                sub.textContent = message || (state === 'connected' ? 'RTDB Asia-Southeast1 Aktif' : 'Penyimpanan Offline');
+                sub.textContent = message || (state === 'connected' ? 'RTDB Asia-Southeast1 Aktif' : 'Status Koneksi Siaga');
+            }
+            if (dotHeader) {
+                dotHeader.style.backgroundColor = color;
+            }
+            if (textHeader) {
+                textHeader.textContent = state === 'connected' ? 'Live' : (state === 'empty' ? 'Kosong' : 'Offline');
             }
         }
 
@@ -1245,7 +1251,7 @@
         }
 
         updateMetricsCards(record) {
-            if (!record || !Number.isFinite(record.tanah)) return;
+            const hasData = record && Number.isFinite(record.tanah);
             const S = window.ConfigStore.get();
             const tUnit = S.unit === 'F' ? '°F' : '°C';
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
@@ -1254,10 +1260,12 @@
             const soilVal = $('#valSoilMoisture');
             const soilBadge = $('#badgeSoilStatus');
             const soilSub = $('#subSoilMoisture');
-            if (soilVal) soilVal.textContent = Math.round(record.tanah);
-
+            if (soilVal) soilVal.textContent = hasData ? Math.round(record.tanah) : '—';
             if (soilBadge) {
-                if (record.tanah < S.dry) {
+                if (!hasData) {
+                    soilBadge.className = 'metric-badge';
+                    soilBadge.textContent = 'NO DATA';
+                } else if (record.tanah < S.dry) {
                     soilBadge.className = 'metric-badge alert';
                     soilBadge.textContent = `Kering (< ${S.dry}%)`;
                 } else if (record.tanah > S.wet) {
@@ -1268,17 +1276,20 @@
                     soilBadge.textContent = `Optimal (${S.dry}-${S.wet}%)`;
                 }
             }
-
             if (soilSub) {
-                soilSub.textContent = `Batas Histeresis: ${S.dry}% – ${S.wet}%`;
+                soilSub.textContent = hasData ? `Batas Histeresis: ${S.dry}% – ${S.wet}%` : `Target: ${S.dry}% – ${S.wet}% (Menunggu Sensor)`;
             }
 
             // 2. Air Humidity Card
             const airVal = $('#valAirHumidity');
             const airBadge = $('#badgeAirStatus');
-            if (airVal) airVal.textContent = Math.round(record.udara);
+            const airSub = $('#subAirHumidity');
+            if (airVal) airVal.textContent = hasData ? Math.round(record.udara) : '—';
             if (airBadge) {
-                if (record.udara < 60) {
+                if (!hasData) {
+                    airBadge.className = 'metric-badge';
+                    airBadge.textContent = 'NO DATA';
+                } else if (record.udara < 60) {
                     airBadge.className = 'metric-badge warn';
                     airBadge.textContent = 'Kering (< 60%)';
                 } else if (record.udara > 80) {
@@ -1289,14 +1300,18 @@
                     airBadge.textContent = 'Normal (60-80%)';
                 }
             }
+            if (airSub) airSub.textContent = hasData ? 'Target: 60% – 80%' : 'Target: 60% – 80% (Menunggu Sensor)';
 
             // 3. Temperature Card
             const tempVal = $('#valAirTemp');
             const tempBadge = $('#badgeTempStatus');
-            const curT = convTemp(record.suhu);
-            if (tempVal) tempVal.textContent = curT.toFixed(1);
+            const tempSub = $('#subAirTemp');
+            if (tempVal) tempVal.textContent = hasData ? convTemp(record.suhu).toFixed(1) : '—';
             if (tempBadge) {
-                if (record.suhu > 28) {
+                if (!hasData) {
+                    tempBadge.className = 'metric-badge';
+                    tempBadge.textContent = 'NO DATA';
+                } else if (record.suhu > 28) {
                     tempBadge.className = 'metric-badge alert';
                     tempBadge.textContent = 'Suhu Panas (> 28°C)';
                 } else if (record.suhu < 15) {
@@ -1307,18 +1322,19 @@
                     tempBadge.textContent = `Optimal (15-24${tUnit})`;
                 }
             }
+            if (tempSub) tempSub.textContent = hasData ? 'Toleransi Max: 28°C' : 'Target: 15–24°C (Menunggu Sensor)';
 
             // 4. PUMP HYSTERESIS CONTROLLER (Separation of pumpCommand and pumpActualState)
-            // Software set-point decision logic
             const prevCommand = this.lastPumpCommand;
             let pumpCommand = prevCommand;
-
-            if (record.tanah < S.dry) {
-                pumpCommand = true;
-            } else if (record.tanah > S.wet) {
-                pumpCommand = false;
+            if (hasData) {
+                if (record.tanah < S.dry) {
+                    pumpCommand = true;
+                } else if (record.tanah > S.wet) {
+                    pumpCommand = false;
+                }
             } else {
-                pumpCommand = prevCommand;
+                pumpCommand = false;
             }
 
             const pumpVal = $('#valPumpStatus');
@@ -1326,38 +1342,44 @@
             const pumpPulse = $('#pumpPulseDot');
             const pumpSub = $('#subPumpStatus');
 
-            // Explicitly distinguish set-point command vs hardware feedback
             if (pumpVal) {
-                pumpVal.textContent = pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF';
+                pumpVal.textContent = hasData ? (pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF') : 'STANDBY / OFFLINE';
             }
-
             if (pumpBadge) {
-                pumpBadge.className = pumpCommand ? 'metric-badge alert' : 'metric-badge ok';
-                pumpBadge.textContent = pumpCommand ? 'Irigasi Aktif' : 'Siaga Otomatis';
-            }
-
-            if (pumpPulse) {
-                pumpPulse.style.backgroundColor = pumpCommand ? 'var(--accent-amber)' : 'var(--accent-emerald)';
-                pumpPulse.style.boxShadow = `0 0 10px ${pumpCommand ? 'var(--accent-amber)' : 'var(--accent-emerald)'}`;
-            }
-
-            if (pumpSub) {
-                let relayFeedbackText = 'Feedback Relay: Tidak Tersedia';
-                if (record.relayActual === true) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Aktif';
-                else if (record.relayActual === false) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Mati';
-
-                if (pumpCommand) {
-                    pumpSub.textContent = record.tanah < S.dry
-                        ? `Tanah ${Math.round(record.tanah)}% < ${S.dry}% · ${relayFeedbackText}`
-                        : `Tanah ${Math.round(record.tanah)}% (Histeresis ke > ${S.wet}%) · ${relayFeedbackText}`;
+                if (!hasData) {
+                    pumpBadge.className = 'metric-badge';
+                    pumpBadge.textContent = 'Tidak Ada Data';
                 } else {
-                    pumpSub.textContent = record.tanah > S.wet
-                        ? `Tanah ${Math.round(record.tanah)}% > ${S.wet}% · ${relayFeedbackText}`
-                        : `Tanah ${Math.round(record.tanah)}% (Rentang Siaga) · ${relayFeedbackText}`;
+                    pumpBadge.className = pumpCommand ? 'metric-badge alert' : 'metric-badge ok';
+                    pumpBadge.textContent = pumpCommand ? 'Irigasi Aktif' : 'Siaga Otomatis';
+                }
+            }
+            if (pumpPulse) {
+                const color = hasData ? (pumpCommand ? 'var(--accent-amber)' : 'var(--accent-emerald)') : 'var(--text-muted)';
+                pumpPulse.style.backgroundColor = color;
+                pumpPulse.style.boxShadow = hasData ? `0 0 10px ${color}` : 'none';
+            }
+            if (pumpSub) {
+                if (!hasData) {
+                    pumpSub.textContent = 'Feedback Relay: Belum Ada Data (Sistem Siaga)';
+                } else {
+                    let relayFeedbackText = 'Feedback Relay: Tidak Tersedia';
+                    if (record.relayActual === true) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Aktif';
+                    else if (record.relayActual === false) relayFeedbackText = 'Feedback Relay: Terkonfirmasi Mati';
+
+                    if (pumpCommand) {
+                        pumpSub.textContent = record.tanah < S.dry
+                            ? `Tanah ${Math.round(record.tanah)}% < ${S.dry}% · ${relayFeedbackText}`
+                            : `Tanah ${Math.round(record.tanah)}% (Histeresis ke > ${S.wet}%) · ${relayFeedbackText}`;
+                    } else {
+                        pumpSub.textContent = record.tanah > S.wet
+                            ? `Tanah ${Math.round(record.tanah)}% > ${S.wet}% · ${relayFeedbackText}`
+                            : `Tanah ${Math.round(record.tanah)}% (Rentang Siaga) · ${relayFeedbackText}`;
+                    }
                 }
             }
 
-            if (pumpCommand !== prevCommand) {
+            if (hasData && pumpCommand !== prevCommand) {
                 this.toast(pumpCommand
                     ? `Perintah Irigasi Otomatis ON: Kelembapan tanah di bawah ${S.dry}%.`
                     : `Perintah Irigasi Otomatis OFF: Kelembapan tanah melampaui ${S.wet}%.`,
@@ -1367,30 +1389,37 @@
             }
 
             // Mini sparklines
-            this.renderMiniSparkline('sparkSoil', 'tanah', record.tanah < S.dry ? '#f43f5e' : '#10b981');
-            this.renderMiniSparkline('sparkAir', 'udara', '#3b82f6');
-            this.renderMiniSparkline('sparkTemp', 'suhu', '#f59e0b');
+            if (hasData) {
+                this.renderMiniSparkline('sparkSoil', 'tanah', record.tanah < S.dry ? '#f43f5e' : '#10b981');
+                this.renderMiniSparkline('sparkAir', 'udara', '#3b82f6');
+                this.renderMiniSparkline('sparkTemp', 'suhu', '#f59e0b');
+            } else {
+                ['sparkSoil', 'sparkAir', 'sparkTemp'].forEach(id => {
+                    const el = $(`#${id}`);
+                    if (el) el.innerHTML = '';
+                });
+            }
 
             // Update Tetens VPD across Dashboard and DSS
-            const vpdVal = this.calculateTetensVPD(record.suhu, record.udara);
+            const vpdVal = hasData ? this.calculateTetensVPD(record.suhu, record.udara) : null;
             const plantHealthVpd = $('#plantHealthVPD');
-            if (plantHealthVpd) plantHealthVpd.textContent = `${vpdVal.toFixed(2)} kPa`;
+            if (plantHealthVpd) plantHealthVpd.textContent = vpdVal !== null ? `${vpdVal.toFixed(2)} kPa` : '—';
             const dssVpd = $('#dssVpdValue');
-            if (dssVpd) dssVpd.textContent = `${vpdVal.toFixed(2)} kPa`;
+            if (dssVpd) dssVpd.textContent = vpdVal !== null ? `${vpdVal.toFixed(2)} kPa` : '—';
 
             // Update Camera Status card & live badge
             const valCam = $('#valCamStatus');
             const badgeCam = $('#badgeCamStatus');
             const dashCamBadge = $('#dashCamBadge');
             const isCamActive = this.cam && this.cam.run;
-            if (valCam) valCam.textContent = isCamActive ? 'ONLINE' : 'SIAGA';
+            if (valCam) valCam.textContent = isCamActive ? 'ONLINE' : 'OFFLINE';
             if (badgeCam) {
                 badgeCam.className = isCamActive ? 'metric-badge ok' : 'metric-badge';
-                badgeCam.textContent = isCamActive ? 'Feed Aktif' : 'Siaga / LAN';
+                badgeCam.textContent = isCamActive ? 'Feed Aktif' : 'Belum Terhubung';
             }
             if (dashCamBadge) {
                 dashCamBadge.className = isCamActive ? 'badge-tag emerald tabular-nums' : 'badge-tag amber tabular-nums';
-                dashCamBadge.textContent = isCamActive ? 'LIVE' : 'SIAGA';
+                dashCamBadge.textContent = isCamActive ? 'LIVE' : 'OFFLINE';
             }
 
             // Update Leaf Growth Campaign Stats across Dashboard & Footer Bar
@@ -1410,23 +1439,39 @@
                 if (sFail) sFail.textContent = gStats.failedCount;
                 if (sPct) sPct.textContent = `${gStats.targetPct}%`;
 
+                const wEl = $('#plantHealthWidth');
+                const aEl = $('#plantHealthArea');
+                const qcEl = $('#plantHealthQC');
+                const condEl = $('#plantHealthCond');
+
                 if (gStats.latestRecord) {
-                    const wEl = $('#plantHealthWidth');
-                    const aEl = $('#plantHealthArea');
                     if (wEl) wEl.textContent = `${gStats.latestRecord.leaf_width_px} px`;
                     if (aEl) aEl.textContent = `${gStats.latestRecord.leaf_area_px} px²`;
+                    if (qcEl) {
+                        qcEl.textContent = `${gStats.latestRecord.quality_status} (v1.2 ExG)`;
+                        qcEl.style.color = gStats.latestRecord.quality_status === 'VALID' ? 'var(--accent-emerald)' : 'var(--accent-rose)';
+                    }
+                    if (condEl) condEl.textContent = `HST ${gStats.latestRecord.hst_day} Vegetatif`;
+                } else {
+                    if (wEl) wEl.textContent = '— px';
+                    if (aEl) aEl.textContent = '— px²';
+                    if (qcEl) {
+                        qcEl.textContent = 'NO DATA';
+                        qcEl.style.color = 'var(--text-muted)';
+                    }
+                    if (condEl) condEl.textContent = 'Menunggu Data';
                 }
             }
 
             // Update SCADA Otomasi Page Elements
             const scadaCmd = $('#scadaPumpCommand');
             const scadaAct = $('#scadaRelayActual');
-            if (scadaCmd) scadaCmd.textContent = pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF';
+            if (scadaCmd) scadaCmd.textContent = hasData ? (pumpCommand ? 'PERINTAH: ON' : 'PERINTAH: OFF') : 'PERINTAH: STANDBY';
             if (scadaAct) {
-                if (record.relayActual === true) {
+                if (hasData && record.relayActual === true) {
                     scadaAct.textContent = 'TERKONFIRMASI: AKTIF';
                     scadaAct.style.color = 'var(--accent-emerald)';
-                } else if (record.relayActual === false) {
+                } else if (hasData && record.relayActual === false) {
                     scadaAct.textContent = 'TERKONFIRMASI: MATI';
                     scadaAct.style.color = 'var(--text-muted)';
                 } else {
@@ -1467,16 +1512,28 @@
             const container = $('#predictionForecastGrid');
             if (!container) return;
 
+            // Zero dummy/simulation: strictly require physical telemetry
+            if (!latestRecord || !Number.isFinite(latestRecord.suhu) || !Number.isFinite(latestRecord.tanah)) {
+                container.innerHTML = `
+                    <div class="forecast-empty-state" style="grid-column: 1/-1; padding: 24px 16px; text-align: center; color: var(--text-muted);">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="margin-bottom: 6px; opacity: 0.5;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <p style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 2px;">Menunggu Telemetri Sensor Fisik</p>
+                        <p style="font-size: 11px;">Model termal GDD (Tbase 4.0°C) memerlukan telemetri suhu dan kelembapan aktual dari DHT22 & HW-390.</p>
+                    </div>
+                `;
+                return;
+            }
+
             // Grounded agronomic model: Lettuce Growing Degree Days (Base Temp = 4.0°C)
             const baseTemp = 4.0;
             const targetGDD = 700; // Typical cumulative GDD required for curly lettuce harvest
-            const currentTemp = latestRecord && Number.isFinite(latestRecord.suhu) ? latestRecord.suhu : 24.5;
-            const currentSoil = latestRecord && Number.isFinite(latestRecord.tanah) ? latestRecord.tanah : 72;
+            const currentTemp = latestRecord.suhu;
+            const currentSoil = latestRecord.tanah;
 
             // Daily thermal rate based on current microclimate: GDD_day = max(0, T_mean - 4.0)
             const dailyGDD = Math.max(0, currentTemp - baseTemp);
 
-            // Cumulative thermal heat units estimate up to current HST (24)
+            // Cumulative thermal heat units estimate up to current HST
             const estimatedCurrentGDD = Math.min(targetGDD, Math.round(this.plantAgeHST * dailyGDD));
             const baseMaturityPct = Math.min(98, Math.round((estimatedCurrentGDD / targetGDD) * 100));
 
@@ -1539,9 +1596,10 @@
 
             if (allRecords.length === 0) {
                 wrap.innerHTML = `
-                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 12px;">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-                        <span>Menunggu paket telemetri pertama dari sensor…</span>
+                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 12px; padding: 24px; text-align: center;">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="opacity: 0.5;"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                        <span style="font-weight: 600; color: var(--text-secondary);">Belum Ada Data Telemetri Aktual</span>
+                        <span style="font-size: 11px;">Status: OFFLINE / Menunggu paket telemetri tervalidasi dari sensor fisik & RTDB</span>
                     </div>
                 `;
                 return;
@@ -1663,7 +1721,6 @@
             if ($('#setUrl')) $('#setUrl').value = S.firebase;
             if ($('#setPoll')) $('#setPoll').value = String(S.poll);
             if ($('#setFetchN')) $('#setFetchN').value = String(S.fetchN);
-            if ($('#setDemo')) $('#setDemo').checked = !!S.forceDemo;
             if ($('#setDry')) $('#setDry').value = S.dry;
             if ($('#setWet')) $('#setWet').value = S.wet;
             if ($('#setUnit')) $('#setUnit').value = S.unit;

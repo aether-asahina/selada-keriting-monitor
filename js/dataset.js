@@ -287,13 +287,10 @@
                     const badgeClass = z === 'dry' ? 'alert' : (z === 'wet' ? 'warn' : 'ok');
                     const badgeText = this.getZoneLabel(z);
 
-                    // Distinguish source tag
-                    let sourceTag = `<span class="badge-tag emerald" style="font-size:10px;">LIVE</span>`;
-                    if (r.source === 'cache') {
-                        sourceTag = `<span class="badge-tag amber" style="font-size:10px;">CACHE</span>`;
-                    } else if (r.source === 'simulated') {
-                        sourceTag = `<span class="badge-tag blue" style="font-size:10px;">SIMULASI</span>`;
-                    }
+                    // Distinguish source tag (100% Real Data: LIVE or CACHE)
+                    const sourceTag = r.source === 'cache'
+                        ? `<span class="badge-tag amber" style="font-size:10px;">CACHE</span>`
+                        : `<span class="badge-tag emerald" style="font-size:10px;">LIVE</span>`;
 
                     return `
                         <tr>
@@ -358,7 +355,7 @@
 
             const recentRows = this.getRecent(count).reverse();
             if (recentRows.length === 0) {
-                container.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Memuat data telemetri dari Firebase...</td></tr>`;
+                container.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Tidak ada telemetri aktual (Status: Offline / Firebase Kosong).</td></tr>`;
                 return;
             }
 
@@ -371,12 +368,9 @@
                 const pumpBadgeClass = isPumpOn ? 'warn' : 'ok';
                 const pumpText = isPumpOn ? 'Perintah: Menyala' : 'Perintah: Mati';
 
-                let sourceBadge = `<span class="badge-tag emerald" style="font-size:9px;">LIVE</span>`;
-                if (row.source === 'cache') {
-                    sourceBadge = `<span class="badge-tag amber" style="font-size:9px;">CACHE</span>`;
-                } else if (row.source === 'simulated') {
-                    sourceBadge = `<span class="badge-tag blue" style="font-size:9px;">SIMULASI</span>`;
-                }
+                const sourceBadge = row.source === 'cache'
+                    ? `<span class="badge-tag amber" style="font-size:9px;">CACHE</span>`
+                    : `<span class="badge-tag emerald" style="font-size:9px;">LIVE</span>`;
 
                 return `
                     <tr>

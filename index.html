@@ -139,7 +139,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path></svg>
                                 Kelembapan Tanah
                             </span>
-                            <span class="metric-badge ok" id="badgeSoilStatus">Optimal (65-78%)</span>
+                            <span class="metric-badge" id="badgeSoilStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -149,7 +149,7 @@
                             <div class="sparkline-container" id="sparkSoil"></div>
                         </div>
                         <div class="metric-footer">
-                            <span id="subSoilMoisture">Target: 65% – 78%</span>
+                            <span id="subSoilMoisture">Target: 65% – 78% (Menunggu Sensor)</span>
                             <span class="badge-tag">HW-390 Kapasitif</span>
                         </div>
                     </article>
@@ -161,7 +161,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path></svg>
                                 Suhu Udara
                             </span>
-                            <span class="metric-badge ok" id="badgeTempStatus">Optimal (15-24°C)</span>
+                            <span class="metric-badge" id="badgeTempStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -171,7 +171,7 @@
                             <div class="sparkline-container" id="sparkTemp"></div>
                         </div>
                         <div class="metric-footer">
-                            <span id="subAirTemp">Toleransi Max: 28°C</span>
+                            <span id="subAirTemp">Target: 15–24°C (Menunggu Sensor)</span>
                             <span class="badge-tag">DHT22</span>
                         </div>
                     </article>
@@ -183,7 +183,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
                                 Kelembapan Udara
                             </span>
-                            <span class="metric-badge ok" id="badgeAirStatus">Normal (60-80%)</span>
+                            <span class="metric-badge" id="badgeAirStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -193,7 +193,7 @@
                             <div class="sparkline-container" id="sparkAir"></div>
                         </div>
                         <div class="metric-footer">
-                            <span id="subAirHumidity">Target: 60% – 80%</span>
+                            <span id="subAirHumidity">Target: 60% – 80% (Menunggu Sensor)</span>
                             <span class="badge-tag">DHT22</span>
                         </div>
                     </article>
@@ -271,13 +271,13 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
                                 Status Kamera
                             </span>
-                            <span class="metric-badge ok" id="badgeCamStatus">Siaga / LAN</span>
+                            <span class="metric-badge" id="badgeCamStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Belum Terhubung</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
-                                <span class="metric-value" id="valCamStatus" style="font-size: 20px;">ONLINE</span>
+                                <span class="metric-value" id="valCamStatus" style="font-size: 20px; color: var(--text-muted);">OFFLINE</span>
                             </div>
-                            <span class="badge-tag emerald">Port 81 Stream</span>
+                            <span class="badge-tag">Port 81 Siaga</span>
                         </div>
                         <div class="metric-footer">
                             <span id="subCamStatus">Capture Interval: 10 Menit</span>
@@ -292,13 +292,13 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path><polyline points="9 11 12 14 22 4"></polyline></svg>
                                 Pengumpulan Gambar
                             </span>
-                            <span class="metric-badge ok" id="badgeImageStatus">Lolos QC</span>
+                            <span class="metric-badge" id="badgeImageStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Verifikasi Aktual</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
-                                <span class="metric-value tabular-nums" id="valImageTarget">960 / 1.600</span>
+                                <span class="metric-value tabular-nums" id="valImageTarget">0 / 1.600</span>
                             </div>
-                            <span class="badge-tag emerald" id="badgeImageProgress">60% Target</span>
+                            <span class="badge-tag" id="badgeImageProgress">0% Target</span>
                         </div>
                         <div class="metric-footer">
                             <span>60 Slots/Hari · 42 Hari</span>
@@ -317,15 +317,20 @@
                                 Feed Kamera ESP32-CAM (Kanopi)
                             </div>
                             <div class="cam-overlay-badges">
-                                <span class="badge-tag emerald tabular-nums" id="dashCamBadge">LIVE</span>
+                                <span class="badge-tag amber tabular-nums" id="dashCamBadge">OFFLINE</span>
                                 <span class="badge-tag blue tabular-nums" id="dashCamRes">SVGA 800×600</span>
                             </div>
                         </div>
                         <div class="panel-card-body">
                             <div class="cam-preview-box" id="dashCamBox">
-                                <img id="dashCamImg" class="cam-preview-img" src="data/growth_images/img_20261031_163538_orig.jpg" alt="Feed Kamera Tanaman">
+                                <div class="visual-empty-placeholder" id="dashCamEmpty" style="width: 100%; height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
+                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                    <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">ESP32-CAM Offline</span>
+                                    <span style="font-size: 11px;">Konfigurasi IP kamera di tab Kamera untuk mengaktifkan live feed MJPEG</span>
+                                </div>
+                                <img id="dashCamImg" class="cam-preview-img" src="" alt="Feed Kamera Tanaman" style="display: none;">
                                 <div class="cam-controls-bar">
-                                    <span class="tabular-nums" id="dashCamTime" style="font-size: 11px; color: #ffffff;">2026-10-31 16:50:00 WIB</span>
+                                    <span class="tabular-nums" id="dashCamTime" style="font-size: 11px; color: #ffffff;">Menunggu Kamera</span>
                                     <div style="display: flex; gap: 6px;">
                                         <button type="button" class="btn btn-secondary btn small" id="btnDashCamReconnect">Hubungkan Ulang</button>
                                         <a href="#kamera" class="btn btn-primary btn small" id="btnDashCamGoTab">Kontrol Penuh</a>
@@ -351,28 +356,33 @@
                         <div class="panel-card-body">
                             <div class="plant-health-view">
                                 <div class="plant-health-visual-wrap">
-                                    <img id="plantHealthImg" class="plant-health-img" src="data/growth_images/img_20261031_163538_overlay.jpg" alt="Analisis Kontur Daun">
+                                    <div class="visual-empty-placeholder" id="plantHealthEmpty" style="width: 100%; height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
+                                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                                        <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Belum Ada Citra Capture Aktual</span>
+                                        <span style="font-size: 11px;">Menunggu scheduler capture ESP32-CAM (07:00–16:50 WIB)</span>
+                                    </div>
+                                    <img id="plantHealthImg" class="plant-health-img" src="" alt="Analisis Kontur Daun" style="display: none;">
                                 </div>
                                 <div class="health-metrics-row">
                                     <div class="health-mini-stat">
                                         <span class="lbl">Kondisi Tanaman</span>
-                                        <b id="plantHealthCond" style="color: var(--accent-emerald);">Vegetatif Aktif</b>
+                                        <b id="plantHealthCond" style="color: var(--text-muted);">Menunggu Data</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Lebar Maksimal</span>
-                                        <b class="tabular-nums" id="plantHealthWidth">188 px</b>
+                                        <b class="tabular-nums" id="plantHealthWidth" style="color: var(--text-muted);">— px</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Luas Kanopi Siluet</span>
-                                        <b class="tabular-nums" id="plantHealthArea">12.878 px²</b>
+                                        <b class="tabular-nums" id="plantHealthArea" style="color: var(--text-muted);">— px²</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Tetens VPD</span>
-                                        <b class="tabular-nums" id="plantHealthVPD">0.78 kPa</b>
+                                        <b class="tabular-nums" id="plantHealthVPD" style="color: var(--text-muted);">— kPa</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Kualitas Segmentasi</span>
-                                        <b id="plantHealthQC" style="color: var(--accent-emerald);">VALID (v1.2 ExG)</b>
+                                        <b id="plantHealthQC" style="color: var(--text-muted);">NO DATA</b>
                                     </div>
                                 </div>
                             </div>
@@ -441,28 +451,28 @@
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Perkembangan Lebar Daun (px)</span>
-                                <span class="badge-tag blue tabular-nums">+143 px sejak HST 1</span>
+                                <span class="badge-tag blue tabular-nums">— px</span>
                             </div>
                             <div class="sub-chart-wrap" id="miniChartWidth"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Luas Siluet Kanopi (px²)</span>
-                                <span class="badge-tag emerald tabular-nums">12.878 px²</span>
+                                <span class="badge-tag emerald tabular-nums">— px²</span>
                             </div>
                             <div class="sub-chart-wrap" id="miniChartArea"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Laju Pertumbuhan Harian</span>
-                                <span class="badge-tag amber tabular-nums">~6.5 px/hari</span>
+                                <span class="badge-tag amber tabular-nums">— px/h</span>
                             </div>
                             <div class="sub-chart-wrap" id="miniChartGrowthRate"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Akumulasi Termal GDD (Tbase 4.0°C)</span>
-                                <span class="badge-tag blue tabular-nums">485 °C·hari</span>
+                                <span class="badge-tag blue tabular-nums">— °C·h</span>
                             </div>
                             <div class="sub-chart-wrap" id="miniChartGDD"></div>
                         </div>
@@ -476,36 +486,15 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
                             Peringatan Sistem & Notifikasi Telemetri
                         </div>
-                        <span class="badge-tag emerald">Semua Sistem Beroperasi Normal</span>
+                        <span class="badge-tag blue">100% Data Riil</span>
                     </div>
                     <div class="panel-card-body">
                         <div class="alerts-section" id="dashAlertsList">
-                            <div class="alert-item ok">
-                                <div class="alert-dot"></div>
-                                <div class="alert-content">
-                                    <h4>ESP32-CAM Status: Online & Terjadwal</h4>
-                                    <p>Modul kamera terhubung pada subnet LAN 192.168.1.105. Capture 10-menit aktif.</p>
-                                </div>
-                            </div>
-                            <div class="alert-item ok">
-                                <div class="alert-dot"></div>
-                                <div class="alert-content">
-                                    <h4>Sensor Telemetri: Data Mengalir Normal</h4>
-                                    <p>Sensor kapasitif tanah HW-390 dan DHT22 mengirim paket data setiap 1 detik ke Firebase RTDB.</p>
-                                </div>
-                            </div>
-                            <div class="alert-item ok">
-                                <div class="alert-dot"></div>
-                                <div class="alert-content">
-                                    <h4>Validasi Ambang Batas: Seluruh Nilai dalam Batas Aman</h4>
-                                    <p>Kelembapan tanah 71.5% (optimal 65-78%), suhu udara 24.2°C (optimal 15-24°C), kelembapan udara 72%.</p>
-                                </div>
-                            </div>
                             <div class="alert-item info">
                                 <div class="alert-dot"></div>
                                 <div class="alert-content">
-                                    <h4>Target Pengumpulan Data: 960 / 1.600 Gambar Valid (60%)</h4>
-                                    <p>Telah tercapai 960 gambar valid lolos uji kualitas pencahayaan dan ketajaman laplacian.</p>
+                                    <h4>Sistem Siaga: Menunggu Paket Telemetri & Kamera</h4>
+                                    <p>Dashboard berjalan dalam mode 100% data riil tanpa simulasi. Telemetri akan diperbarui otomatis saat modul fisik terhubung.</p>
                                 </div>
                             </div>
                         </div>
@@ -516,31 +505,31 @@
                 <div class="stats-footer-bar">
                     <div class="footer-stat-card">
                         <span class="lbl">Total Gambar</span>
-                        <span class="val tabular-nums" id="statTotalImages">960</span>
+                        <span class="val tabular-nums" id="statTotalImages">0</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Gambar Valid</span>
-                        <span class="val tabular-nums" id="statValidImages" style="color: var(--accent-emerald);">880</span>
+                        <span class="val tabular-nums" id="statValidImages" style="color: var(--accent-emerald);">0</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Gambar Gagal</span>
-                        <span class="val tabular-nums" id="statFailedImages" style="color: var(--accent-rose);">80</span>
+                        <span class="val tabular-nums" id="statFailedImages" style="color: var(--accent-rose);">0</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Sensor Aktif</span>
-                        <span class="val tabular-nums" id="statActiveSensors">3 Unit</span>
+                        <span class="val tabular-nums" id="statActiveSensors">Siaga</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Progres Target</span>
-                        <span class="val tabular-nums" id="statTargetPct" style="color: var(--accent-blue);">60%</span>
+                        <span class="val tabular-nums" id="statTargetPct" style="color: var(--accent-blue);">0%</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Durasi Monitoring</span>
-                        <span class="val tabular-nums" id="statMonitoringDuration">Hari 24 / 42 HST</span>
+                        <span class="val tabular-nums" id="statMonitoringDuration">Target 42 HST</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Status Sistem</span>
-                        <span class="val" id="statSystemStatus" style="color: var(--accent-emerald); font-size: 14px;">SCADA Siaga</span>
+                        <span class="val" id="statSystemStatus" style="color: var(--accent-emerald); font-size: 14px;">Siaga Otomatis</span>
                     </div>
                 </div>
 
@@ -808,23 +797,23 @@
                 <div class="metrics-kpi-grid">
                     <div class="metric-card">
                         <span class="metric-title">Progres Siklus Monitoring</span>
-                        <div class="metric-value tabular-nums" style="color: var(--accent-blue);">Hari 24 / 42</div>
-                        <span class="badge-tag blue">57% Siklus Selesai</span>
+                        <div class="metric-value tabular-nums" style="color: var(--accent-blue);">Kampanye 42 Hari</div>
+                        <span class="badge-tag blue">60 Slot / Hari (07:00–16:50 WIB)</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Target Gambar Valid</span>
-                        <div class="metric-value tabular-nums" id="growthValidCount" style="color: var(--accent-emerald);">880 / 1.600</div>
-                        <span class="badge-tag emerald" id="growthTargetPct">55% Target Terpenuhi</span>
+                        <div class="metric-value tabular-nums" id="growthValidCount" style="color: var(--accent-emerald);">0 / 1.600</div>
+                        <span class="badge-tag emerald" id="growthTargetPct">0% Target Terpenuhi</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Gambar Gagal / Reject QC</span>
-                        <div class="metric-value tabular-nums" id="growthFailedCount" style="color: var(--accent-rose);">80</div>
-                        <span class="badge-tag rose">Blur / Pencahayaan Kurang</span>
+                        <div class="metric-value tabular-nums" id="growthFailedCount" style="color: var(--accent-rose);">0</div>
+                        <span class="badge-tag rose">Pencatatan Riil</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Jadwal Capture Otomatis</span>
                         <div class="metric-value" style="font-size: 18px;">Tiap 10 Menit</div>
-                        <span class="badge-tag emerald" id="growthNextCaptureCountdown">Capture Berikutnya: 06:42</span>
+                        <span class="badge-tag" id="growthNextCaptureCountdown">Siaga Terjadwal</span>
                     </div>
                 </div>
 
@@ -841,28 +830,28 @@
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Kurva Lebar Maksimal Daun (px)</span>
-                                <span class="badge-tag blue tabular-nums">188 px</span>
+                                <span class="badge-tag blue tabular-nums">— px</span>
                             </div>
                             <div class="sub-chart-wrap" id="growthWidthChart"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Kurva Luas Siluet Kanopi (px²)</span>
-                                <span class="badge-tag emerald tabular-nums">12.878 px²</span>
+                                <span class="badge-tag emerald tabular-nums">— px²</span>
                             </div>
                             <div class="sub-chart-wrap" id="growthAreaChart"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Laju Pertumbuhan Harian (px/hari)</span>
-                                <span class="badge-tag amber tabular-nums">~6.5 px/hari</span>
+                                <span class="badge-tag amber tabular-nums">— px/h</span>
                             </div>
                             <div class="sub-chart-wrap" id="growthRateChart"></div>
                         </div>
                         <div class="sub-chart-box">
                             <div class="sub-chart-title">
                                 <span>Akumulasi Satuan Termal GDD (°C·hari)</span>
-                                <span class="badge-tag blue tabular-nums">485 °C·hari</span>
+                                <span class="badge-tag blue tabular-nums">— °C·h</span>
                             </div>
                             <div class="sub-chart-wrap" id="growthGddChart"></div>
                         </div>
@@ -1162,10 +1151,6 @@
                                     </select>
                                 </div>
                             </div>
-                            <div class="field">
-                                <div class="t"><b>Selalu Pakai Data Contoh</b><span>Simulasi telemetri tanpa hardware.</span></div>
-                                <div class="ctl"><input class="sw" type="checkbox" id="setDemo"></div>
-                            </div>
                         </article>
 
                         <article class="panel">
@@ -1350,10 +1335,6 @@
                     </aside>
                 </div>
             </section>
-        </main>
-    </div>
-
-    
         </main>
     </div>
 

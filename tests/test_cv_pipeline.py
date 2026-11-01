@@ -17,8 +17,33 @@ from datetime import datetime, timezone, timedelta
 
 # Import modules from scripts
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts')))
-from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE, generate_synthetic_lettuce_image
+from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE
 from scheduler_daemon import LeafGrowthScheduler
+
+def _create_unit_test_image(width=320, height=240, has_plant=True, is_dark=False, is_blur=False):
+    """
+    Pure in-memory unit test matrix (not used for production data generation).
+    Strictly for asserting OpenCV mathematical equations (ExG, Otsu, Laplacian).
+    """
+    if is_dark:
+        return Image.new("RGB", (width, height), (5, 5, 5))
+
+    img = Image.new("RGB", (width, height), (40, 30, 20)) # Substrate
+    if has_plant:
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
+        # Add high-contrast green ellipse in center
+        cx, cy = width // 2, height // 2
+        rx, ry = width // 4, height // 4
+        draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=(30, 180, 40))
+        # Add texture details to pass Laplacian variance threshold
+        for offset in range(-rx + 10, rx - 10, 8):
+            draw.line([cx + offset, cy - ry + 15, cx + offset, cy + ry - 15], fill=(20, 140, 30), width=2)
+
+    if is_blur:
+        img = img.filter(ImageFilter.GaussianBlur(radius=15))
+
+    return img
 
 class TestLettuceCVPipeline(unittest.TestCase):
     def setUp(self):
@@ -35,29 +60,28 @@ class TestLettuceCVPipeline(unittest.TestCase):
         shutil.rmtree(self.temp_out, ignore_errors=True)
 
     def test_quality_validation_normal_plant(self):
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=60)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
         np_img = np.array(img)
         is_valid, status, detail = self.pipeline.validate_quality(np_img)
         self.assertTrue(is_valid)
         self.assertEqual(status, "VALID")
 
     def test_quality_validation_pitch_dark_rejected(self):
-        dark_img = Image.new("RGB", (320, 240), (5, 5, 5))
+        dark_img = _create_unit_test_image(width=320, height=240, is_dark=True)
         np_img = np.array(dark_img)
         is_valid, status, detail = self.pipeline.validate_quality(np_img)
         self.assertFalse(is_valid)
         self.assertEqual(status, "INVALID_DARK")
 
     def test_quality_validation_blurred_rejected(self):
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=60)
-        blurred = img.filter(ImageFilter.GaussianBlur(radius=12))
-        np_img = np.array(blurred)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True, is_blur=True)
+        np_img = np.array(img)
         is_valid, status, detail = self.pipeline.validate_quality(np_img)
         self.assertFalse(is_valid)
         self.assertEqual(status, "INVALID_BLUR")
 
     def test_segmentation_exg_binary_mask(self):
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=60)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
         np_img = np.array(img)
         mask = self.pipeline.segment_vegetation(np_img)
         self.assertEqual(mask.shape, (240, 320))
@@ -68,7 +92,7 @@ class TestLettuceCVPipeline(unittest.TestCase):
         self.assertGreater(np.sum(mask == 255), 500)
 
     def test_measurements_width_and_area(self):
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=70)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
         np_img = np.array(img)
         mask = self.pipeline.segment_vegetation(np_img)
         res = self.pipeline.extract_contour_and_measurements(mask)
@@ -77,7 +101,7 @@ class TestLettuceCVPipeline(unittest.TestCase):
         self.assertGreater(len(res["contour_pts"]), 5)
 
     def test_uncalibrated_returns_null_physical_units(self):
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=60)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
         rec = self.pipeline.process_image(img, plant_id="SLD-TEST", hst_day=20)
         self.assertIsNone(rec["leaf_width_mm"])
         self.assertIsNone(rec["leaf_area_mm2"])
@@ -90,7 +114,7 @@ class TestLettuceCVPipeline(unittest.TestCase):
             meta_file=self.temp_meta,
             calib_factor_mm_per_px=0.5
         )
-        img = generate_synthetic_lettuce_image(width=320, height=240, canopy_radius=60)
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
         rec = calib_pipeline.process_image(img, plant_id="SLD-TEST", hst_day=20)
         self.assertIsNotNone(rec["leaf_width_mm"])
         self.assertIsNotNone(rec["leaf_area_mm2"])

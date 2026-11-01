@@ -29,9 +29,9 @@ from PIL import Image
 
 # Import computer vision pipeline
 try:
-    from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE, generate_synthetic_lettuce_image
+    from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE
 except ImportError:
-    from scripts.growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE, generate_synthetic_lettuce_image
+    from scripts.growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE
 
 # ----------------------------------------------------------------------------
 # Campaign Specifications
@@ -158,8 +158,8 @@ class LeafGrowthScheduler:
         log(f"Recorded capture failure for slot {slot_key}: {error_msg}", "ERROR")
         return record
 
-    def run_slot(self, force=False, simulate_if_unavailable=False, hst_day=24):
-        """Executes a 10-minute capture slot."""
+    def run_slot(self, force=False, hst_day=24):
+        """Executes a 10-minute capture slot with 100% genuine data discipline."""
         now_wib = self.get_wib_now()
         slot_key = self.get_slot_key(now_wib)
 
@@ -175,13 +175,10 @@ class LeafGrowthScheduler:
         pil_img, err = self.capture_from_camera(self.cfg["camera_host"])
 
         if pil_img is None:
-            if simulate_if_unavailable:
-                log("Hardware camera unavailable. Generating verified synthetic test rosette for simulation...", "WARN")
-                pil_img = generate_synthetic_lettuce_image(width=640, height=480, canopy_radius=115)
-            else:
-                return self.record_failure(slot_key, err, now_wib, hst_day)
+            # Strictly record real failure without synthesizing fake rosette images or fake measurements
+            return self.record_failure(slot_key, err, now_wib, hst_day)
 
-        # Process through Computer Vision Pipeline
+        # Process genuine physical camera frame through Computer Vision Pipeline
         now_ts = int(now_wib.timestamp() * 1000)
         res = self.pipeline.process_image(
             input_image=pil_img,
@@ -200,8 +197,11 @@ class LeafGrowthScheduler:
         meta_file = self.cfg["metadata_path"]
         records = []
         if os.path.exists(meta_file):
-            with open(meta_file, "r", encoding="utf-8") as f:
-                records = json.load(f)
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    records = json.load(f)
+            except Exception:
+                records = []
 
         total = len(records)
         valid = sum(1 for r in records if r.get("quality_status") == "VALID")
@@ -219,9 +219,10 @@ class LeafGrowthScheduler:
         print(f" Valid Images Passed: {valid} / {target} target ({pct:.1f}%)")
         print(f" Failed Captures    : {failed}")
         print(f" Camera Endpoint    : http://{self.cfg['camera_host']}/capture")
+        print(" Data Authenticity  : 100% REAL DATA ONLY (Zero Simulation/Synthetic)")
         print("==================================================================")
 
-    def run_daemon(self, poll_interval_sec=15, simulate_if_unavailable=False):
+    def run_daemon(self, poll_interval_sec=15):
         """Runs the continuous scheduler daemon loop."""
         log("Leaf Growth Scheduler Daemon started. Monitoring slots...")
         self.print_status()
@@ -233,7 +234,7 @@ class LeafGrowthScheduler:
                 if (now.minute % self.cfg["slot_interval_minutes"] == 0) and self.is_within_window(now):
                     slot_key = self.get_slot_key(now)
                     if slot_key not in self.executed_slots:
-                        self.run_slot(simulate_if_unavailable=simulate_if_unavailable)
+                        self.run_slot()
                 time.sleep(poll_interval_sec)
             except KeyboardInterrupt:
                 log("Scheduler Daemon stopped by user.")
@@ -247,7 +248,6 @@ if __name__ == "__main__":
     parser.add_argument("--run-once", action="store_true", help="Execute single capture slot immediately")
     parser.add_argument("--daemon", action="store_true", help="Run continuous scheduler daemon")
     parser.add_argument("--status", action="store_true", help="Display campaign progress report")
-    parser.add_argument("--simulate", action="store_true", help="Use synthetic test image if camera is unreachable")
     parser.add_argument("--camera-host", type=str, default=CONFIG["camera_host"], help="ESP32-CAM IP or hostname")
 
     args = parser.parse_args()
@@ -259,8 +259,8 @@ if __name__ == "__main__":
     if args.status:
         scheduler.print_status()
     elif args.run_once:
-        scheduler.run_slot(force=True, simulate_if_unavailable=args.simulate)
+        scheduler.run_slot(force=True)
     elif args.daemon:
-        scheduler.run_daemon(simulate_if_unavailable=args.simulate)
+        scheduler.run_daemon()
     else:
         scheduler.print_status()

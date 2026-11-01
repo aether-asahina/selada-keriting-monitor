@@ -352,37 +352,29 @@ fbUrlCases.forEach(c => {
 });
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 6: DATA SOURCE SEGREGATION & CACHE ISOLATION
+// TEST SUITE 6: REAL DATA INTEGRITY & CACHE ISOLATION (ZERO SIMULATION)
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [6] Data Source Segregation & Cache Isolation ---${C.reset}`);
+console.log(`\n${C.bold}--- [6] Real Data Integrity & Cache Isolation (Zero Simulation) ---${C.reset}`);
 
 try {
     localStorageMock.clear();
     const client = FirebaseEdgeClient;
 
-    // Normalizing simulated data
-    const rawDemo = { kelembapan_tanah: 62.0, suhu: 24.5, kelembapan_udara: 70.0, status: 'simulated' };
-    const parsedDemo = client.normalizeRecord(rawDemo, Date.now(), 'simulated');
-
-    client.currentSource = 'simulated';
-    client.demoRecords = [parsedDemo];
+    // Verify empty state: strictly returns empty array without injecting simulated data
     client.liveRecords = [];
-
-    // Verify demo buffer
-    const demoRecords = client.getAll();
-    client.saveCache();
-    const cachedData = localStorageMock.getItem('selada_telemetry_live_cache_v3');
-
-    if (demoRecords.length === 1 && demoRecords[0].tanah === 62) {
-        pass('Data-Segregation', 'Demo data stored in memory buffer', 'Buffer contains 1 simulated point');
+    const emptyRecords = client.getAll();
+    if (Array.isArray(emptyRecords) && emptyRecords.length === 0) {
+        pass('Data-Integrity', 'Zero-data integrity: client returns empty array without synthetic fallback', 'liveRecords = [] strictly preserved');
     } else {
-        fail('Data-Segregation', 'Demo data stored in memory buffer', `Got length ${demoRecords.length}`);
+        fail('Data-Integrity', 'Zero-data integrity', `Expected empty array, got ${emptyRecords.length} records`);
     }
 
-    if (cachedData === null) {
-        pass('Data-Segregation', 'Simulated demo data is NEVER written to persistent cache', 'localStorage remains pristine (null)');
+    client.saveCache();
+    const cachedEmpty = localStorageMock.getItem('selada_telemetry_live_cache_v3');
+    if (cachedEmpty === null) {
+        pass('Data-Integrity', 'Empty state is not polluted into persistent cache', 'localStorage remains pristine (null)');
     } else {
-        fail('Data-Segregation', 'Simulated demo data is NEVER written to persistent cache', `Leak detected in cache: ${cachedData}`);
+        fail('Data-Integrity', 'Empty state cache pollution', `Unexpected cache content: ${cachedEmpty}`);
     }
 
     // Now ingest genuine live record
@@ -397,18 +389,18 @@ try {
     const updatedCache = localStorageMock.getItem('selada_telemetry_live_cache_v3');
 
     if (liveRecords.length === 1 && liveRecords[0].tanah === 68) {
-        pass('Data-Segregation', 'Live records buffer cleanly isolated from demo records', 'Only 1 live point returned when source=live');
+        pass('Data-Integrity', 'Live records buffer strictly returns genuine sensor readings', '1 live point returned with tanah=68%');
     } else {
-        fail('Data-Segregation', 'Live records buffer cleanly isolated', `Got ${liveRecords.length} points`);
+        fail('Data-Integrity', 'Live records buffer integrity', `Got ${liveRecords.length} points`);
     }
 
     if (updatedCache && updatedCache.includes('68')) {
-        pass('Data-Segregation', 'Persistent cache stores genuine live telemetry only', 'Saved live point to localStorage successfully');
+        pass('Data-Integrity', 'Persistent cache stores genuine live telemetry only', 'Saved live point to localStorage successfully');
     } else {
-        fail('Data-Segregation', 'Persistent cache stores genuine live telemetry only', `Cache content: ${updatedCache}`);
+        fail('Data-Integrity', 'Persistent cache stores genuine live telemetry only', `Cache content: ${updatedCache}`);
     }
 } catch (e) {
-    fail('Data-Segregation', 'Source segregation & cache isolation', e);
+    fail('Data-Integrity', 'Source segregation & cache isolation', e);
 }
 
 // ------------------------------------------------------------------------------
