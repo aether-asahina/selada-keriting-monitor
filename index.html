@@ -27,7 +27,7 @@
             </button>
             <div class="brand-info">
                 <h1 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2;">Selada Keriting · Kelompok 5</h1>
-                <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Greenhouse Hydroponic · Node /kelompok5</p>
+                <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Monitoring IoT &amp; CV · Node /kelompok5</p>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -86,19 +86,19 @@
             <header class="content-header" style="margin-bottom: 0;">
                 <div class="header-title-block">
                     <h1 id="ptitle">Dashboard</h1>
-                    <p id="psub">Kondisi mikroklimat dan telemetri presisi kebun selada keriting Kelompok 5 saat ini</p>
+                    <p id="psub">Pusat monitoring telemetri sensor, status pompa/relay, kamera live, dan pertumbuhan daun Kelompok 5</p>
                 </div>
                 <div class="header-meta-group">
-                    <span class="badge-tag blue tabular-nums" id="headerDateRange">Siklus 42 HST · 07:00–16:50 WIB</span>
-                    <span class="badge-tag emerald" id="headerGreenhouseId">Greenhouse Smart Hydroponic · Kelompok 5</span>
-                    <span class="badge-tag" id="headerCamStatusBadge">ESP32-CAM Siaga</span>
+                    <span class="badge-tag emerald tabular-nums" id="headerGroupBadge">Kelompok 5 · /kelompok5</span>
+                    <span class="badge-tag blue tabular-nums" id="headerDateRange">Data: Menunggu Telemetri</span>
+                    <span class="badge-tag tabular-nums" id="headerCamStatusBadge">Kamera: OFFLINE</span>
                     <span class="badge-tag amber tabular-nums" id="headerAlertsCount">0 Peringatan</span>
                 </div>
             </header>
 
             <!-- ================= TAB 1: DASHBOARD ================= -->
             <section class="page" id="p-ringkasan">
-                <!-- Plant Age & Campaign Progress Banner -->
+                <!-- Concise Device, Sync, HST & Campaign Target Status Strip -->
                 <div class="plant-age-banner">
                     <div class="banner-row">
                         <div class="banner-left">
@@ -109,13 +109,41 @@
                                 </svg>
                             </div>
                             <div class="banner-title-block">
-                                <h2>Status Siklus Kampanye Pertumbuhan <span class="badge-tag blue" style="font-size: 10px;">Target 42 HST</span></h2>
-                                <p>Progres dihitung murni dari citra tervalidasi (07:00–16:50 WIB) · VPD target 0.40–0.85 kPa & histeresis tanah 65–78%</p>
+                                <h2>Status Sistem &amp; Kampanye 42 Hari <span class="badge-tag emerald" style="font-size: 10px;">Kelompok 5</span></h2>
+                                <p>100% Data Fisik Aktual · Jadwal foto 10 menit (07:00–16:50 WIB) mandiri ke microSD &amp; sinkronisasi tervalidasi FNV-1a</p>
                             </div>
                         </div>
                         <div class="age-stat-group">
                             <span class="age-number tabular-nums" id="plantAgeNumber">—</span>
-                            <span class="age-unit">HST (Hari Setelah Tanam)</span>
+                            <span class="age-unit">HST (Target 42 Hari)</span>
+                        </div>
+                    </div>
+
+                    <div class="device-status-strip" id="deviceSummaryStrip">
+                        <div class="status-strip-item">
+                            <span class="strip-label">Koneksi ESP32 (/kelompok5)</span>
+                            <strong class="strip-val tabular-nums" id="sumEspStatus">Menghubungkan…</strong>
+                            <span class="strip-sub" id="sumEspSub">Firebase RTDB Asia-Southeast1</span>
+                        </div>
+                        <div class="status-strip-item">
+                            <span class="strip-label">Kamera Live (/stream)</span>
+                            <strong class="strip-val tabular-nums" id="valCamStatus">OFFLINE</strong>
+                            <span class="strip-sub" id="badgeCamStatus">Port 81 MJPEG · OV2640</span>
+                        </div>
+                        <div class="status-strip-item">
+                            <span class="strip-label">Penyimpanan microSD</span>
+                            <strong class="strip-val tabular-nums" id="dashSdStorageVal">NOT AVAILABLE</strong>
+                            <span class="strip-sub" id="dashSdStorageSub">Spooler lokal /kelompok5/queue/</span>
+                        </div>
+                        <div class="status-strip-item">
+                            <span class="strip-label">Sinkronisasi Antrean Foto</span>
+                            <strong class="strip-val tabular-nums" id="dashSyncQueueVal">Siaga Mandiri</strong>
+                            <span class="strip-sub" id="dashSyncQueueSub">1 foto/siklus + konfirmasi server</span>
+                        </div>
+                        <div class="status-strip-item">
+                            <span class="strip-label">Foto Valid Terverifikasi</span>
+                            <strong class="strip-val tabular-nums" id="valImageTarget" style="color: var(--accent-emerald);">0 / 1.600</strong>
+                            <span class="strip-sub tabular-nums" id="badgeImageProgress">0% Target (60 Slot/Hari)</span>
                         </div>
                     </div>
 
@@ -130,8 +158,8 @@
                     </div>
                 </div>
 
-                <!-- TOP AREA: 8 KPI METRIC CARDS -->
-                <div class="metrics-kpi-grid">
+                <!-- TOP AREA: 4 CORE PHYSICAL TELEMETRY & ACTUATOR KPI CARDS -->
+                <div class="metrics-kpi-grid" id="metrics-kpi-grid">
                     <!-- 1. Soil Moisture -->
                     <article class="metric-card" id="cardMoisture">
                         <div class="card-top">
@@ -139,7 +167,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path></svg>
                                 Kelembapan Tanah
                             </span>
-                            <span class="metric-badge" id="badgeSoilStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
+                            <span class="metric-badge" id="badgeSoilStatus">NO DATA</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -150,7 +178,7 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subSoilMoisture">Target: 65% – 78% (Menunggu Sensor)</span>
-                            <span class="badge-tag">HW-390 Kapasitif</span>
+                            <span class="badge-tag">HW-390 GPIO 34</span>
                         </div>
                     </article>
 
@@ -161,7 +189,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path></svg>
                                 Suhu Udara
                             </span>
-                            <span class="metric-badge" id="badgeTempStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
+                            <span class="metric-badge" id="badgeTempStatus">NO DATA</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -172,7 +200,7 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subAirTemp">Target: 15–24°C (Menunggu Sensor)</span>
-                            <span class="badge-tag">DHT22</span>
+                            <span class="badge-tag">DHT22 GPIO 4</span>
                         </div>
                     </article>
 
@@ -183,7 +211,7 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
                                 Kelembapan Udara
                             </span>
-                            <span class="metric-badge" id="badgeAirStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Menunggu Data</span>
+                            <span class="metric-badge" id="badgeAirStatus">NO DATA</span>
                         </div>
                         <div class="metric-body">
                             <div class="metric-value-wrap">
@@ -194,119 +222,132 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subAirHumidity">Target: 60% – 80% (Menunggu Sensor)</span>
-                            <span class="badge-tag">DHT22</span>
+                            <span class="badge-tag">DHT22 GPIO 4</span>
                         </div>
                     </article>
 
-                    <!-- 4. Electrical Conductivity (EC) - Optional/Uninstalled -->
-                    <article class="metric-card">
+                    <!-- 4. Pump & Relay Status (SCADA Hysteresis) -->
+                    <article class="metric-card" id="cardPump">
                         <div class="card-top">
                             <span class="metric-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
-                                EC Nutrisi
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                                Status Pompa / Relay
                             </span>
-                            <span class="badge-tag">Modul Eksternal</span>
+                            <span class="metric-badge" id="badgePumpStatus">STANDBY</span>
                         </div>
                         <div class="metric-body">
-                            <div class="metric-value-wrap">
-                                <span class="metric-value tabular-nums" id="valEC" style="color: var(--text-muted); font-size: 16px;">NOT AVAILABLE</span>
+                            <div class="metric-value-wrap" style="align-items: center; gap: 8px;">
+                                <span class="pulse-dot" id="pumpPulseDot" style="width: 9px; height: 9px; background-color: var(--text-muted); box-shadow: none;"></span>
+                                <span class="metric-value tabular-nums" id="valPumpStatus" style="font-size: 18px;">STANDBY / OFFLINE</span>
                             </div>
-                            <span class="badge-tag" id="badgeECStatus" style="font-size: 10px;">Belum Terpasang</span>
+                            <span class="badge-tag blue">GPIO 26</span>
                         </div>
                         <div class="metric-footer">
-                            <span>Sensor Fisik Tidak Terpasang</span>
-                            <span class="badge-tag">OFFLINE</span>
-                        </div>
-                    </article>
-
-                    <!-- 5. pH Substrate/Nutrient - Optional/Uninstalled -->
-                    <article class="metric-card">
-                        <div class="card-top">
-                            <span class="metric-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><path d="M8 12h8"></path></svg>
-                                Derajat pH
-                            </span>
-                            <span class="badge-tag">Modul Eksternal</span>
-                        </div>
-                        <div class="metric-body">
-                            <div class="metric-value-wrap">
-                                <span class="metric-value tabular-nums" id="valPH" style="color: var(--text-muted); font-size: 16px;">NOT AVAILABLE</span>
-                            </div>
-                            <span class="badge-tag" id="badgePHStatus" style="font-size: 10px;">Belum Terpasang</span>
-                        </div>
-                        <div class="metric-footer">
-                            <span>Sensor Fisik Tidak Terpasang</span>
-                            <span class="badge-tag">OFFLINE</span>
-                        </div>
-                    </article>
-
-                    <!-- 6. CO2 Concentration - Optional/Uninstalled -->
-                    <article class="metric-card">
-                        <div class="card-top">
-                            <span class="metric-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
-                                Konsentrasi CO₂
-                            </span>
-                            <span class="badge-tag">Modul Eksternal</span>
-                        </div>
-                        <div class="metric-body">
-                            <div class="metric-value-wrap">
-                                <span class="metric-value tabular-nums" id="valCO2" style="color: var(--text-muted); font-size: 16px;">NOT AVAILABLE</span>
-                            </div>
-                            <span class="badge-tag" id="badgeCO2Status" style="font-size: 10px;">Belum Terpasang</span>
-                        </div>
-                        <div class="metric-footer">
-                            <span>Sensor Fisik Tidak Terpasang</span>
-                            <span class="badge-tag">OFFLINE</span>
-                        </div>
-                    </article>
-
-                    <!-- 7. ESP32-CAM Camera Status -->
-                    <article class="metric-card">
-                        <div class="card-top">
-                            <span class="metric-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
-                                Status Kamera
-                            </span>
-                            <span class="metric-badge" id="badgeCamStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Belum Terhubung</span>
-                        </div>
-                        <div class="metric-body">
-                            <div class="metric-value-wrap">
-                                <span class="metric-value" id="valCamStatus" style="font-size: 20px; color: var(--text-muted);">OFFLINE</span>
-                            </div>
-                            <span class="badge-tag">Port 81 Siaga</span>
-                        </div>
-                        <div class="metric-footer">
-                            <span id="subCamStatus">Capture Interval: 10 Menit</span>
-                            <span class="badge-tag blue">OV2640</span>
-                        </div>
-                    </article>
-
-                    <!-- 8. Image Collection Campaign Progress -->
-                    <article class="metric-card">
-                        <div class="card-top">
-                            <span class="metric-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path><polyline points="9 11 12 14 22 4"></polyline></svg>
-                                Pengumpulan Gambar
-                            </span>
-                            <span class="metric-badge" id="badgeImageStatus" style="background: rgba(255,255,255,0.06); color: var(--text-muted);">Verifikasi Aktual</span>
-                        </div>
-                        <div class="metric-body">
-                            <div class="metric-value-wrap">
-                                <span class="metric-value tabular-nums" id="valImageTarget">0 / 1.600</span>
-                            </div>
-                            <span class="badge-tag" id="badgeImageProgress">0% Target</span>
-                        </div>
-                        <div class="metric-footer">
-                            <span>60 Slots/Hari · 42 Hari</span>
-                            <span class="badge-tag emerald">Target 1.600</span>
+                            <span id="subPumpStatus">Histeresis: ON &lt;65% · OFF &gt;78%</span>
+                            <span class="badge-tag">Aktif-LOW</span>
                         </div>
                     </article>
                 </div>
 
-                <!-- MAIN AREA: 3 KEY DASHBOARD COMPOSITION PANELS -->
-                <div class="dashboard-main-composition">
-                    <!-- Panel 1: Live Camera View (/stream) & Autonomous microSD Spooler Status -->
+                <!-- CENTRAL MONITORING HUB: INTERACTIVE TELEMETRY, PUMP & PLANT GROWTH CHARTS -->
+                <article class="telemetry-section">
+                    <div class="chart-controls">
+                        <div class="chart-title-area">
+                            <h3>Pusat Grafik Interaktif Telemetri Sensor, Status Pompa &amp; Pertumbuhan Tanaman</h3>
+                            <p>Pembaruan otomatis real-time dari Firebase RTDB Kelompok 5 · Arahkan kursor atau sentuh grafik untuk inspeksi nilai &amp; timestamp</p>
+                        </div>
+                        <div class="chart-action-bar">
+                            <div class="btn-pill-group" role="group" aria-label="Pilih parameter grafik">
+                                <button type="button" class="btn-pill active" data-chart-metric="all">Semua Sensor</button>
+                                <button type="button" class="btn-pill" data-chart-metric="tanah">Tanah (%)</button>
+                                <button type="button" class="btn-pill" data-chart-metric="udara">Udara (%)</button>
+                                <button type="button" class="btn-pill" data-chart-metric="suhu">Suhu (°C)</button>
+                                <button type="button" class="btn-pill" data-chart-metric="pompa">Pompa (ON/OFF)</button>
+                            </div>
+                            <div class="btn-pill-group" role="group" aria-label="Pilih rentang waktu">
+                                <button type="button" class="btn-pill active" data-chart-window="0">Semua</button>
+                                <button type="button" class="btn-pill" data-chart-window="60">1m</button>
+                                <button type="button" class="btn-pill" data-chart-window="300">5m</button>
+                                <button type="button" class="btn-pill" data-chart-window="900">15m</button>
+                                <button type="button" class="btn-pill" data-chart-window="3600">1j</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Legend & Readout Bar -->
+                    <div class="chart-legend-bar" id="chartLegendBar">
+                        <span class="legend-item"><i class="swatch emerald"></i>Kelembapan Tanah (%)</span>
+                        <span class="legend-item"><i class="swatch blue"></i>Kelembapan Udara (%)</span>
+                        <span class="legend-item"><i class="swatch amber"></i>Suhu Udara (°C)</span>
+                        <span class="legend-item"><i class="swatch rose"></i>Status Pompa/Relay (ON/OFF)</span>
+                        <span class="legend-source tabular-nums" id="chartSourceReadout">Sumber: Firebase /kelompok5</span>
+                    </div>
+
+                    <!-- Primary Wide Interactive SVG Chart with Floating Tooltip -->
+                    <div class="chart-svg-wrap" id="chartSvgWrap">
+                        <div class="skeleton-shimmer" style="height: 100%;"></div>
+                    </div>
+
+                    <!-- 2 Wide Interactive Sub-Charts: Pump/Relay History & Actual Leaf Growth Progress -->
+                    <div class="analytics-subgrid wide-two-col">
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <div>
+                                    <span>Riwayat Status Pompa / Relay &amp; Histeresis Tanah</span>
+                                    <small class="sub-chart-hint">Step-chart status aktual pompa (ON = 1, OFF = 0) terhadap kelembapan tanah</small>
+                                </div>
+                                <span class="badge-tag slate tabular-nums" id="dashBadgePumpChart">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap tall" id="dashPumpChartWrap"></div>
+                        </div>
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <div>
+                                    <span>Progres Pertumbuhan Tanaman Aktual (Computer Vision)</span>
+                                    <small class="sub-chart-hint">Lebar daun maksimal (px) &amp; luas siluet kanopi (px²) dari citra tervalidasi</small>
+                                </div>
+                                <span class="badge-tag slate tabular-nums" id="dashBadgeGrowthChart">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap tall" id="dashGrowthChartWrap"></div>
+                        </div>
+                    </div>
+
+                    <!-- 4 Subgrid Charts: Width, Area, Growth Rate, GDD -->
+                    <div class="analytics-subgrid">
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <span>Perkembangan Lebar Daun (px)</span>
+                                <span class="badge-tag slate tabular-nums" id="miniBadgeWidth">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap" id="miniChartWidth"></div>
+                        </div>
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <span>Luas Siluet Kanopi (px²)</span>
+                                <span class="badge-tag slate tabular-nums" id="miniBadgeArea">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap" id="miniChartArea"></div>
+                        </div>
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <span>Laju Pertumbuhan Harian (px/hari)</span>
+                                <span class="badge-tag slate tabular-nums" id="miniBadgeRate">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap" id="miniChartGrowthRate"></div>
+                        </div>
+                        <div class="sub-chart-box">
+                            <div class="sub-chart-title">
+                                <span>Akumulasi Termal GDD (Tbase 4.0°C)</span>
+                                <span class="badge-tag slate tabular-nums" id="miniBadgeGDD">NO DATA</span>
+                            </div>
+                            <div class="sub-chart-wrap" id="miniChartGDD"></div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- VISUAL HUB: 2 BALANCED WIDE COLUMNS (LIVE CAMERA /STREAM + PLANT HEALTH & ACTUAL CAPTURE GALLERY) -->
+                <div class="dashboard-main-composition" id="dashboard-main-composition">
+                    <!-- Panel 1: Live Camera View (/stream) -->
                     <article class="panel-card">
                         <div class="panel-card-header">
                             <div class="panel-card-title">
@@ -338,27 +379,15 @@
                                     <span class="badge-tag emerald tabular-nums" style="font-size: 10px;">1 Foto / Siklus RAM Aman</span>
                                 </div>
                             </div>
-                            <div class="cam-hw-status-grid">
-                                <div class="cam-hw-status-item">
-                                    <span class="hw-label">Penyimpanan microSD Lokal</span>
-                                    <strong class="hw-val tabular-nums" id="dashSdStorageVal">NOT AVAILABLE (IP Kamera Kosong)</strong>
-                                    <span class="hw-sub" id="dashSdStorageSub">Jadwal 10 menit (07:00–16:50 WIB) tetap tersimpan ke microSD pada ESP32-CAM tanpa Wi-Fi</span>
-                                </div>
-                                <div class="cam-hw-status-item">
-                                    <span class="hw-label">Sinkronisasi Antrean Foto</span>
-                                    <strong class="hw-val tabular-nums" id="dashSyncQueueVal">Siaga Mandiri (Spooler microSD)</strong>
-                                    <span class="hw-sub" id="dashSyncQueueSub">Sinkronisasi 1 foto/siklus + konfirmasi server saat Wi-Fi aktif</span>
-                                </div>
-                            </div>
                         </div>
                     </article>
 
-                    <!-- Panel 2: Plant Health Analysis -->
+                    <!-- Panel 2: Plant Health Analysis & Actual Capture Gallery -->
                     <article class="panel-card">
                         <div class="panel-card-header">
                             <div class="panel-card-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                                Analisis Kesehatan & Kontur Daun
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                                Kontur Daun &amp; Galeri Hasil Capture Aktual
                             </div>
                             <div class="seg" role="group" aria-label="Mode overlay daun">
                                 <button type="button" class="btn-seg active" id="btnHealthModeOverlay">Kontur</button>
@@ -367,19 +396,19 @@
                             </div>
                         </div>
                         <div class="panel-card-body">
-                            <div class="plant-health-view">
+                            <div class="plant-health-view" id="plant-health-view">
                                 <div class="plant-health-visual-wrap">
-                                    <div class="visual-empty-placeholder" id="plantHealthEmpty" style="width: 100%; height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
-                                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                                        <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Belum Ada Citra Capture Aktual</span>
-                                        <span style="font-size: 11px;">Menunggu scheduler capture ESP32-CAM (07:00–16:50 WIB)</span>
+                                    <div class="visual-empty-placeholder" id="plantHealthEmpty" style="width: 100%; height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                                        <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">NO DATA · Belum Ada Citra Capture Aktual</span>
+                                        <span style="font-size: 11px;">Menunggu hasil capture aktual ESP32-CAM (07:00–16:50 WIB)</span>
                                     </div>
                                     <img id="plantHealthImg" class="plant-health-img" src="" alt="Analisis Kontur Daun" style="display: none;">
                                 </div>
                                 <div class="health-metrics-row">
                                     <div class="health-mini-stat">
                                         <span class="lbl">Kondisi Tanaman</span>
-                                        <b id="plantHealthCond" style="color: var(--text-muted);">Menunggu Data</b>
+                                        <b id="plantHealthCond" style="color: var(--text-muted);">NO DATA</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Lebar Maksimal</span>
@@ -394,115 +423,91 @@
                                         <b class="tabular-nums" id="plantHealthVPD" style="color: var(--text-muted);">— kPa</b>
                                     </div>
                                     <div class="health-mini-stat">
-                                        <span class="lbl">Kualitas Segmentasi</span>
+                                        <span class="lbl">Status Validasi QC</span>
                                         <b id="plantHealthQC" style="color: var(--text-muted);">NO DATA</b>
                                     </div>
+                                    <div class="health-mini-stat">
+                                        <span class="lbl">Galeri Kampanye</span>
+                                        <a href="#pertumbuhan-daun" style="font-size: 12px; font-weight: 700; color: var(--accent-blue); text-decoration: none;">Buka Galeri Penuh →</a>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
-                    </article>
-
-                    <!-- Panel 3: AI Recommendations -->
-                    <article class="panel-card">
-                        <div class="panel-card-header">
-                            <div class="panel-card-title">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
-                                Rekomendasi Agronomi & DSS Pakar
-                            </div>
-                            <span class="badge-tag blue">Rule-Based Fisiologi</span>
-                        </div>
-                        <div class="panel-card-body">
-                            <div class="ai-recom-list" id="aiRecomList">
-                                <div class="recom-item warn" style="grid-column: 1 / -1;">
-                                    <div class="recom-title">STATUS: NO DATA / MENUNGGU TELEMETRI</div>
-                                    <div class="recom-desc">Rekomendasi agronomi dan kalkulasi VPD/GDD hanya ditampilkan setelah menerima data aktual dari sensor fisik &amp; Firebase RTDB.</div>
-                                </div>
+                                <div class="dash-mini-gallery" id="dashCaptureGallery"></div>
                             </div>
                         </div>
                     </article>
                 </div>
 
-                <!-- ANALYTICS SECTION: PARAMETER TRENDS & LEAF PROGRESS -->
-                <article class="telemetry-section" style="margin-top: 10px;">
-                    <div class="chart-controls">
-                        <div class="chart-title-area">
-                            <h3>Grafik Parameter Telemetri & Tren Mikroklimat</h3>
-                            <p>Visualisasi aliran data telemetri real-time dengan boundary agronomi selada</p>
-                        </div>
-                        <div class="chart-action-bar">
-                            <div class="btn-pill-group">
-                                <button type="button" class="btn-pill active" data-chart-metric="tanah">Tanah (%)</button>
-                                <button type="button" class="btn-pill" data-chart-metric="udara">Udara (%)</button>
-                                <button type="button" class="btn-pill" data-chart-metric="suhu">Suhu (°C)</button>
+                <!-- OPERATIONAL HUB: 2 BALANCED COLUMNS (DATASET TABLE + AGRONOMIC DSS & ALERTS) -->
+                <div class="dashboard-bottom-split">
+                    <!-- Column 1: Dataset Snippet Table on Main Dashboard -->
+                    <article class="dataset-section">
+                        <div class="dataset-header">
+                            <div class="dataset-title">
+                                <h3>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                                    Log Telemetri Terbaru Firebase Kelompok 5
+                                </h3>
+                                <p>Baris telemetri aktual yang diterima langsung dari node <code>/kelompok5</code></p>
                             </div>
-                            <div class="btn-pill-group">
-                                <button type="button" class="btn-pill" data-chart-window="60">1m</button>
-                                <button type="button" class="btn-pill active" data-chart-window="300">5m</button>
-                                <button type="button" class="btn-pill" data-chart-window="900">15m</button>
-                                <button type="button" class="btn-pill" data-chart-window="1800">30m</button>
+                            <div class="dataset-actions">
+                                <button type="button" class="btn btn-secondary btn small" id="btnCopyJSON">Salin JSON</button>
+                                <button type="button" class="btn btn-secondary btn small" id="btnDownloadCSV">Unduh CSV</button>
                             </div>
                         </div>
-                    </div>
-                    <div class="chart-svg-wrap" id="chartSvgWrap">
-                        <div class="skeleton-shimmer" style="height: 100%;"></div>
-                    </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Waktu</th>
+                                        <th>Tanah (%)</th>
+                                        <th>Udara (%)</th>
+                                        <th>Suhu (°C)</th>
+                                        <th>Status Tanah</th>
+                                        <th>Pompa &amp; Sumber</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="datasetTableBody"></tbody>
+                            </table>
+                        </div>
+                    </article>
 
-                    <!-- 4 Subgrid Charts: Width, Area, Growth Rate, GDD -->
-                    <div class="analytics-subgrid">
-                        <div class="sub-chart-box">
-                            <div class="sub-chart-title">
-                                <span>Perkembangan Lebar Daun (px)</span>
-                                <span class="badge-tag slate tabular-nums" id="miniBadgeWidth">NO DATA</span>
+                    <!-- Column 2: AI Recommendations & System Alerts -->
+                    <div class="col">
+                        <article class="panel-card">
+                            <div class="panel-card-header">
+                                <div class="panel-card-title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                                    Evaluasi Agronomi &amp; DSS Pakar
+                                </div>
+                                <span class="badge-tag blue">Rule-Based Fisiologi</span>
                             </div>
-                            <div class="sub-chart-wrap" id="miniChartWidth"></div>
-                        </div>
-                        <div class="sub-chart-box">
-                            <div class="sub-chart-title">
-                                <span>Luas Siluet Kanopi (px²)</span>
-                                <span class="badge-tag slate tabular-nums" id="miniBadgeArea">NO DATA</span>
-                            </div>
-                            <div class="sub-chart-wrap" id="miniChartArea"></div>
-                        </div>
-                        <div class="sub-chart-box">
-                            <div class="sub-chart-title">
-                                <span>Laju Pertumbuhan Harian</span>
-                                <span class="badge-tag slate tabular-nums" id="miniBadgeRate">NO DATA</span>
-                            </div>
-                            <div class="sub-chart-wrap" id="miniChartGrowthRate"></div>
-                        </div>
-                        <div class="sub-chart-box">
-                            <div class="sub-chart-title">
-                                <span>Akumulasi Termal GDD (Tbase 4.0°C)</span>
-                                <span class="badge-tag slate tabular-nums" id="miniBadgeGDD">NO DATA</span>
-                            </div>
-                            <div class="sub-chart-wrap" id="miniChartGDD"></div>
-                        </div>
-                    </div>
-                </article>
-
-                <!-- ALERTS & NOTIFICATIONS SECTION -->
-                <article class="panel-card" style="margin-top: 10px;">
-                    <div class="panel-card-header">
-                        <div class="panel-card-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
-                            Peringatan Sistem & Notifikasi Telemetri
-                        </div>
-                        <span class="badge-tag blue">100% Data Riil</span>
-                    </div>
-                    <div class="panel-card-body">
-                        <div class="alerts-section" id="dashAlertsList">
-                            <div class="alert-box info">
-                                <div class="alert-box-content">
-                                    <h4>Sistem Siaga: Menunggu Paket Telemetri & Kamera</h4>
-                                    <p>Dashboard berjalan dalam mode 100% data riil tanpa simulasi. Telemetri akan diperbarui otomatis saat modul fisik terhubung.</p>
+                            <div class="panel-card-body">
+                                <div class="ai-recom-list" id="aiRecomList">
+                                    <div class="recom-item warn" style="grid-column: 1 / -1;">
+                                        <div class="recom-title">STATUS: NO DATA / MENUNGGU TELEMETRI</div>
+                                        <div class="recom-desc">Rekomendasi agronomi dan kalkulasi VPD/GDD hanya ditampilkan setelah menerima data aktual dari sensor fisik &amp; Firebase RTDB.</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        </article>
+
+                        <article class="panel-card">
+                            <div class="panel-card-header">
+                                <div class="panel-card-title">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
+                                    Status &amp; Notifikasi Sistem
+                                </div>
+                                <span class="badge-tag emerald">100% Data Riil</span>
+                            </div>
+                            <div class="panel-card-body">
+                                <div class="alerts-section" id="dashAlertsList"></div>
+                            </div>
+                        </article>
                     </div>
-                </article>
+                </div>
 
                 <!-- BOTTOM AREA: PLANT & SYSTEM STATISTICS BAR -->
-                <div class="stats-footer-bar">
+                <div class="stats-footer-bar" id="stats-footer-bar">
                     <div class="footer-stat-card">
                         <span class="lbl">Total Gambar</span>
                         <span class="val tabular-nums" id="statTotalImages">0</span>
@@ -532,99 +537,9 @@
                         <span class="val" id="statSystemStatus" style="color: var(--text-muted); font-size: 13px;">Menghubungkan…</span>
                     </div>
                 </div>
-
-                <!-- Dataset Snippet Table on Main Dashboard -->
-                <article class="dataset-section" style="margin-top: 10px;">
-                    <div class="dataset-header">
-                        <div class="dataset-title">
-                            <h3>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                                Cuplikan Dataset Telemetri Asli
-                            </h3>
-                            <p>Rekaman baris telemetri aktual yang disinkronkan langsung dari Firebase RTDB</p>
-                        </div>
-                        <div class="dataset-actions">
-                            <button type="button" class="btn btn-secondary" id="btnCopyJSON">Salin JSON</button>
-                            <button type="button" class="btn btn-secondary" id="btnDownloadCSV">Unduh CSV</button>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Waktu</th>
-                                    <th>Tanah (%)</th>
-                                    <th>Udara (%)</th>
-                                    <th>Suhu (°C)</th>
-                                    <th>Status Tanah</th>
-                                    <th>Sumber &amp; Validasi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="datasetTableBody"></tbody>
-                        </table>
-                    </div>
-                </article>
             </section>
 
-            <!-- ================= TAB: GREENHOUSE ================= -->
-            <section class="page" id="p-greenhouse" hidden>
-                <div class="panel-card">
-                    <div class="panel-card-header">
-                        <div class="panel-card-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-                            Spesifikasi & Tata Letak Greenhouse Smart Hydroponic A-01
-                        </div>
-                        <span class="badge-tag emerald">NFT Hydroponic System</span>
-                    </div>
-                    <div class="panel-card-body">
-                        <div class="metrics-kpi-grid" style="margin-bottom: 16px;">
-                            <div class="metric-card">
-                                <span class="metric-title">Node 1: Telemetri Sensor</span>
-                                <div class="metric-value tabular-nums" id="ghNodeTelemetry" style="font-size: 15px; margin-top: 4px;">OFFLINE</div>
-                                <span class="badge-tag blue" style="margin-top: 6px;">ESP32 + DHT22 + HW-390</span>
-                            </div>
-                            <div class="metric-card">
-                                <span class="metric-title">Node 2: Kamera CV</span>
-                                <div class="metric-value tabular-nums" id="ghNodeCamera" style="font-size: 15px; margin-top: 4px;">DISCONNECTED</div>
-                                <span class="badge-tag emerald" style="margin-top: 6px;">ESP32-CAM OV2640</span>
-                            </div>
-                            <div class="metric-card">
-                                <span class="metric-title">Modul Nutrisi Eksternal</span>
-                                <div class="metric-value tabular-nums" id="ghExternalModules" style="font-size: 14px; margin-top: 4px; color: var(--text-muted);">NOT AVAILABLE</div>
-                                <span class="badge-tag" style="margin-top: 6px;">EC / pH / CO₂ Belum Terpasang</span>
-                            </div>
-                            <div class="metric-card">
-                                <span class="metric-title">Kampanye Citra (42 HST)</span>
-                                <div class="metric-value tabular-nums" id="ghCampaignSpec" style="font-size: 15px; margin-top: 4px;">0 / 1.600 Citra Valid</div>
-                                <span class="badge-tag" style="margin-top: 6px;">Interval 10 Menit (07:00–16:50 WIB)</span>
-                            </div>
-                        </div>
-
-                        <article class="panel">
-                            <div class="panel-head">
-                                <h2>Arsitektur Node Fisik &amp; Konfigurasi Budidaya</h2>
-                            </div>
-                            <div style="background-color: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 18px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                                    <span class="badge-tag blue">Node 1: Telemetri &amp; Aktuator (ESP32 + HW-390 GPIO 34 + DHT22 GPIO 4 + Relay GPIO 26)</span>
-                                    <span class="badge-tag emerald">Node 2: Computer Vision Overhead (ESP32-CAM OV2640 HTTP /capture &amp; /stream)</span>
-                                </div>
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 14px;">
-                                    <div style="padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: rgba(5,8,17,0.5);">
-                                        <b style="color: var(--text-primary); display: block; margin-bottom: 4px;">Parameter Terukur Aktual</b>
-                                        <span style="font-size: 11px; color: var(--text-secondary);">Suhu udara (°C), kelembapan udara (%RH), dan kelembapan media tanam (%) via Firebase RTDB Asia-Southeast1.</span>
-                                    </div>
-                                    <div style="padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: rgba(5,8,17,0.5);">
-                                        <b style="color: var(--accent-emerald); display: block; margin-bottom: 4px;">Pipeline Computer Vision (ExG + Otsu)</b>
-                                        <span style="font-size: 11px; color: var(--text-secondary);">Validasi iluminasi &amp; fokus, ekstraksi siluet biner hitam-putih, lebar maksimum daun (px), dan luas kanopi (px²).</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </article>
-                    </div>
-                </div>
-            </section>
-<!-- ================= TAB 2: SENSOR ================= -->
+            <!-- ================= TAB 2: SENSOR ================= -->
             <section class="page" id="p-sensor" hidden>
                 <div class="col">
                     <div class="toolbar">
@@ -632,58 +547,53 @@
                             <button type="button" data-n="60" aria-pressed="true">1 menit</button>
                             <button type="button" data-n="120" aria-pressed="false">2 menit</button>
                             <button type="button" data-n="300" aria-pressed="false">5 menit</button>
+                            <button type="button" data-n="3600" aria-pressed="false">1 jam</button>
                         </div>
-                        <span class="msg">Detail statistik & pembacaan telemetri tiap sensor</span>
+                        <span class="msg">Detail statistik &amp; pembacaan telemetri tiap sensor fisik Kelompok 5</span>
                     </div>
 
-                    <!-- Panel Tanah -->
-                    <article class="panel">
-                        <div class="panel-head">
-                            <h2>Kelembapan Tanah (Kapasitif)</h2>
-                            <span class="badge-tag emerald">Target: 65% – 78%</span>
-                        </div>
-                        <div class="stats" id="st-tanah"></div>
-                        <div class="readout" id="ro-tanah"></div>
-                        <div class="chart" id="ch-tanah"></div>
-                    </article>
-
-                    <!-- Panel Suhu -->
-                    <article class="panel">
-                        <div class="panel-head">
-                            <h2>Suhu Mikroklimat</h2>
-                            <span class="badge-tag amber">Optimal: 15°C – 24°C</span>
-                        </div>
-                        <div class="stats" id="st-suhu"></div>
-                        <div class="readout" id="ro-suhu"></div>
-                        <div class="chart" id="ch-suhu"></div>
-                    </article>
-
-                    <!-- Panel Udara -->
-                    <article class="panel">
-                        <div class="panel-head">
-                            <h2>Kelembapan Udara (DHT22)</h2>
-                            <span class="badge-tag blue">Optimal: 60% – 80%</span>
-                        </div>
-                        <div class="stats" id="st-udara"></div>
-                        <div class="readout" id="ro-udara"></div>
-                        <div class="chart" id="ch-udara"></div>
-                    </article>
-
-                    <!-- Pair: Zona Tanah & Scatter Korelasi -->
-                    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));">
+                    <div class="sensor-panels-grid">
+                        <!-- Panel Tanah -->
                         <article class="panel">
                             <div class="panel-head">
-                                <h2>Waktu di Tiap Zona Tanah</h2>
+                                <h2>Kelembapan Tanah (HW-390 Kapasitif)</h2>
+                                <span class="badge-tag emerald">Target: 65% – 78%</span>
                             </div>
-                            <div id="zoneShare"></div>
-                            <p class="hint">Persentase distribusi durasi kelembapan tanah pada rentang kering (&lt;65%), optimal (65–78%), dan basah (&gt;78%).</p>
+                            <div class="stats" id="st-tanah"></div>
+                            <div class="readout" id="ro-tanah"></div>
+                            <div class="chart" id="ch-tanah"></div>
                         </article>
+
+                        <!-- Panel Suhu -->
                         <article class="panel">
                             <div class="panel-head">
-                                <h2>Korelasi Suhu vs Kelembapan Udara</h2>
+                                <h2>Suhu Udara (DHT22)</h2>
+                                <span class="badge-tag amber">Optimal: 15°C – 24°C</span>
+                            </div>
+                            <div class="stats" id="st-suhu"></div>
+                            <div class="readout" id="ro-suhu"></div>
+                            <div class="chart" id="ch-suhu"></div>
+                        </article>
+
+                        <!-- Panel Udara -->
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Kelembapan Udara (DHT22)</h2>
+                                <span class="badge-tag blue">Optimal: 60% – 80%</span>
+                            </div>
+                            <div class="stats" id="st-udara"></div>
+                            <div class="readout" id="ro-udara"></div>
+                            <div class="chart" id="ch-udara"></div>
+                        </article>
+
+                        <!-- Panel Distribusi Zona & Korelasi -->
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Distribusi Zona Tanah &amp; Korelasi Mikroklimat</h2>
                                 <span class="msg" id="corr"></span>
                             </div>
-                            <div class="chart scatter" id="ch-scatter"></div>
+                            <div id="zoneShare"></div>
+                            <div class="chart scatter" id="ch-scatter" style="height: 180px; margin-top: 8px;"></div>
                         </article>
                     </div>
                 </div>

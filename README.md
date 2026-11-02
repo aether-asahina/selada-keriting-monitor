@@ -38,13 +38,13 @@ flowchart TD
         RTDB --- RULES
     end
 
-    subgraph Client_App ["Dashboard Web Profesional (12 Modul Halaman)"]
+    subgraph Client_App ["Dashboard Web Profesional (11 Modul Halaman)"]
         SEC["Security Layer<br/>(XSS Allowlist, CSV Defense CWE-1236, Host Sanitize)"]
         ROUTER["Data Demux & Store<br/>(Live RTDB / Offline-Cache / Zero-Dummy)"]
         GROWTH["Leaf Growth Manager<br/>(Sinkronisasi Galeri & Metrik Kanopi)"]
         SCADA["SCADA Controller<br/>(Pump Command Setpoint vs Relay Feedback)"]
         DSS["Sistem Pakar Agronomi<br/>(Tetens VPD & Physiological GDD)"]
-        UI["12 Modul Tampilan Navigasi<br/>(Dashboard, Greenhouse, Sensor, Kamera, Pertumbuhan Daun, Riwayat, Analisis Tanaman, AI Assistant, Otomasi, Peringatan, Pengaturan, Panduan)"]
+        UI["11 Modul Tampilan Navigasi<br/>(Dashboard, Sensor, Kamera, Pertumbuhan Daun, Riwayat, Analisis Tanaman, AI Assistant, Otomasi, Peringatan, Pengaturan, Panduan)"]
         
         RTDB -->|Polling Mutex / Fetch Lock| ROUTER
         STORE -->|JSON Fetch & Static Asset| GROWTH
@@ -62,26 +62,25 @@ flowchart TD
 
 ## 2. Tiga Pekerjaan Utama yang Diimplementasikan
 
-### (1) Redesign Dashboard: Professional Agricultural Monitoring
+### (1) Redesign Dashboard: Professional Agricultural Monitoring (Kelompok 5)
 Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian modern premium:
 - **Palet Warna**: Canvas `#090d16`, panel/surface `#111827`, border tipis `1px solid rgba(255,255,255,0.08)`, aksen biru Linear `#3b82f6`, indikator hijau `#10b981` (kondisi optimal), kuning `#f59e0b` (peringatan), merah `#ef4444` (kritis).
-- **Sidebar Navigasi (12 Modul)**:
-  1. **Dashboard (`#ringkasan`)**: Ringkasan mikroklimat komprehensif, KPI cards, 3 composition panels, tren telemetri, alerts, dan footer bar statistik.
-  2. **Greenhouse (`#greenhouse`)**: Spesifikasi fasilitas 72 m², kapasitas 480 netpot NFT, elevasi 1.200 mdpl, dan diagram zona mikroklimat.
-  3. **Sensor (`#sensor`)**: Detail telemetri sensor tanah, suhu, udara, zona share, dan korelasi scatter plot.
-  4. **Kamera (`#kamera`)**: Live streaming ESP32-CAM (Port 81), snapshot manual, kontrol kecerahan/kontras/zoom/rotasi, dan galeri sesi.
-  5. **Pertumbuhan Daun (`#pertumbuhan-daun`)**: Dasbor kampanye 42 hari, progres target 1.600 gambar, countdown 10 menit, 4 grafik trajektori kanopi, galeri filterable, dan modal inspeksi segmentasi side-by-side.
-  6. **Riwayat (`#riwayat`)**: Log telemetri per pembacaan / per menit dengan paginasi, pengurutan kolom, dan unduh CSV aman CWE-1236.
-  7. **Analisis Tanaman (`#analisis-tanaman`)**: DSS fisiologi tanaman dengan dekomposisi Tetens VPD dan model termal GDD ($T_{\text{base}} = 4.0^\circ\text{C}$).
-  8. **AI Assistant (`#ai-assistant`)**: Halaman khusus asisten percakapan cerdas dengan auto-diagnosis real-time dan chip topik konsultasi cepat.
-  9. **Otomasi (`#otomasi`)**: Pengendali irigasi histeresis SCADA dengan pemisahan `pumpCommand` vs `relayActual` dan batas timeout 120 detik.
-  10. **Peringatan (`#peringatan`)**: Daftar kejadian telemetri real-time dan konfigurasi aturan ambang batas.
-  11. **Pengaturan (`#pengaturan`)**: Konfigurasi URL Firebase RTDB, interval polling, deadband histeresis, tema, dan preferensi satuan.
-  12. **Panduan (`#panduan`)**: Diagram alur kerja IoT, langkah instalasi step-by-step, troubleshooting, skema JSON RTDB, dan pinout lengkap.
-- **Header Global**: Menampilkan judul sistem, rentang tanggal / jam aktual WIB, status koneksi Firebase & ESP32-CAM, identitas greenhouse (`Greenhouse Smart Hydroponic A-01`), dan badge jumlah peringatan aktif.
-- **Top Area: 8 KPI Metric Cards**:
-  - *Sensor Fisik Terpasang*: Kelembapan Tanah (HW-390, target 65–78%), Suhu Udara (DHT22, target 15–24°C), Kelembapan Udara (DHT22, target 60–80%), Status Kamera (ESP32-CAM LAN), Pengumpulan Gambar (Progres valid 1.600).
-  - *Transparansi Hardware*: Metrik EC, pH, dan CO₂ ditandai secara tegas sebagai **Modul Eksternal (Belum Terpasang / Port Siaga)** tanpa menampilkan angka sensor sintetis palsu.
+- **Sidebar Navigasi Proporsional (11 Modul Fungsional)**:
+  1. **Dashboard (`#ringkasan`)**: Pusat monitoring utama dengan ringkasan status perangkat/kamera/microSD/sinkronisasi/HST, 4 KPI kartu fisik utama, grafik interaktif lebar (Suhu Udara, Kelembapan Udara, Kelembapan Tanah, Riwayat Status Pompa/Relay, serta Progres Pertumbuhan Tanaman Citra Aktual), Live Camera IP lokal, Galeri Capture Aktual, Log Telemetri, dan Evaluasi Pakar.
+  2. **Sensor (`#sensor`)**: Detail telemetri sensor tanah, suhu, udara, zona histeresis, dan korelasi scatter plot dalam grid 2 kolom seimbang.
+  3. **Kamera (`#kamera`)**: Live streaming ESP32-CAM (`http://<IP>:81/stream`), status microSD & antrean sinkronisasi FNV-1a, snapshot manual, dan galeri sesi.
+  4. **Pertumbuhan Daun (`#pertumbuhan-daun`)**: Dasbor kampanye 42 hari, progres target 1.600 gambar, countdown 10 menit, 4 grafik trajektori kanopi, galeri filterable, dan modal inspeksi segmentasi side-by-side.
+  5. **Riwayat (`#riwayat`)**: Log telemetri per pembacaan / per menit dengan paginasi, pengurutan kolom, dan unduh CSV aman CWE-1236.
+  6. **Analisis Tanaman (`#analisis-tanaman`)**: DSS fisiologi tanaman dengan dekomposisi Tetens VPD dan model termal GDD ($T_{\text{base}} = 4.0^\circ\text{C}$).
+  7. **AI Assistant (`#ai-assistant`)**: Halaman khusus asisten percakapan cerdas dengan auto-diagnosis real-time dan chip topik konsultasi cepat.
+  8. **Otomasi (`#otomasi`)**: Pengendali irigasi histeresis SCADA dengan pemisahan `pumpCommand` vs `relayActual` dan batas timeout 120 detik.
+  9. **Peringatan (`#peringatan`)**: Daftar kejadian telemetri real-time dan konfigurasi aturan ambang batas.
+  10. **Pengaturan (`#pengaturan`)**: Konfigurasi URL Firebase RTDB Kelompok 5, interval polling, deadband histeresis, tema, dan preferensi satuan.
+  11. **Panduan (`#panduan`)**: Diagram alur kerja IoT, langkah instalasi step-by-step, troubleshooting, skema JSON RTDB Kelompok 5, dan pinout lengkap.
+- **Header Global Ringkas**: Menampilkan judul sistem, rentang tanggal / jam aktual WIB, status koneksi Firebase Kelompok 5 & ESP32-CAM, dan badge jumlah peringatan aktif.
+- **Top Area: Ringkasan Perangkat & 4 KPI Kartu Fisik**:
+  - *Status Perangkat & Kampanye*: Koneksi ESP32 (`/kelompok5`), Live Camera (`/stream`), Penyimpanan microSD (`SD_MMC`), Antrean Sinkronisasi (`FNV-1a`), dan Target Foto Valid (`0 / 1.600`).
+  - *Sensor Fisik Terpasang & Aktuator*: Kelembapan Tanah (HW-390, target 65–78%), Suhu Udara (DHT22, target 15–24°C), Kelembapan Udara (DHT22, target 60–80%), serta Status Pompa & Relay Irigasi (`ON / OFF`).
 - **Main Area: 3 Panel Komposisi Utama**:
   1. *Live Camera View*: Preview kanopi ESP32-CAM dengan badge status LIVE/OFFLINE, resolusi SVGA 800×600, timestamp WIB, dan tombol reconnect.
   2. *Plant Health Analysis*: Foto tanaman aktual dengan toggle overlay kontur/siluet/asli, kondisi tanaman fisiologis, lebar maksimal daun (px), luas siluet (px²), dan status evaluasi kualitas QC.

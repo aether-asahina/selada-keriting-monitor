@@ -61,7 +61,7 @@
 #define RTC_CHECKPOINT_PERIOD_MS  60000UL // Persist RTC epoch to SD every 60s
 
 // ---------------------- NETWORK & SYNC ENDPOINT CONFIG ----------------------
-static const char WIFI_SSID[]         PROGMEM = "GREENHOUSE_KELOMPOK5_WIFI";
+static const char WIFI_SSID[]         PROGMEM = "KELOMPOK5_SMART_MONITOR_WIFI";
 static const char WIFI_PASS[]         PROGMEM = "CHANGE_ME_IN_PRODUCTION";
 static const char SYNC_SERVER_URL[]   PROGMEM = "http://192.168.1.100:8081/api/kelompok5/sync";
 static const char NTP_SERVER[]        PROGMEM = "pool.ntp.org";

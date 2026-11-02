@@ -487,7 +487,7 @@ function calcVPD(tempC, rhPct) {
 try {
     const vpdNormal = calcVPD(24.0, 70.0);
     if (vpdNormal >= 0.85 && vpdNormal <= 0.95) {
-        pass('Agronomy-VPD', 'Tetens VPD calculation accurate at standard room/greenhouse temp', `T=24°C, RH=70% -> VPD = ${vpdNormal.toFixed(3)} kPa (Optimal: 0.45-0.90 kPa)`);
+        pass('Agronomy-VPD', 'Tetens VPD calculation accurate at standard room/canopy temp', `T=24°C, RH=70% -> VPD = ${vpdNormal.toFixed(3)} kPa (Optimal: 0.45-0.90 kPa)`);
     } else {
         fail('Agronomy-VPD', 'Tetens VPD calculation at 24°C, 70% RH', `Expected ~0.90 kPa, got ${vpdNormal}`);
     }
@@ -568,7 +568,6 @@ const indexHtmlContent = fs.readFileSync(htmlPath, 'utf8');
 
 const requiredTabs = [
     { id: 'p-ringkasan', label: 'Dashboard' },
-    { id: 'p-greenhouse', label: 'Greenhouse' },
     { id: 'p-sensor', label: 'Sensor' },
     { id: 'p-kamera', label: 'Kamera' },
     { id: 'p-pertumbuhan-daun', label: 'Pertumbuhan Daun' },
@@ -994,11 +993,15 @@ try {
         fail('Zero-Fake-HTML', `Found hardcoded fake strings in index.html: ${leakedStatics.join(', ')}`);
     }
 
-    // 2. Verify uninstalled external modules (EC, pH, CO2) explicitly display NOT AVAILABLE
-    if (indexHtmlContent.includes('id="valEC"') && indexHtmlContent.includes('NOT AVAILABLE')) {
-        pass('Uninstalled-Modules', 'EC, pH, and CO2 cards explicitly show NOT AVAILABLE / Belum Terpasang without fake values');
+    // 2. Verify Greenhouse, EC, pH, and CO2 are completely removed and redesigned Dashboard chart containers exist
+    const removedFeatures = ['p-greenhouse', 'valEC', 'valPH', 'valCO2', 'EC Nutrisi', 'Derajat pH', 'Konsentrasi CO'];
+    const remainingRemoved = removedFeatures.filter(tok => indexHtmlContent.includes(tok));
+    const requiredDashContainers = ['chartSvgWrap', 'dashPumpChartWrap', 'dashGrowthChartWrap', 'chartLegendBar', 'dashCaptureGallery', 'deviceSummaryStrip'];
+    const missingDashContainers = requiredDashContainers.filter(id => !indexHtmlContent.includes(`id="${id}"`));
+    if (remainingRemoved.length === 0 && missingDashContainers.length === 0) {
+        pass('UI-Redesign-Audit', 'Greenhouse, EC, pH, and CO2 completely removed; interactive Dashboard chart hub & device strip verified');
     } else {
-        fail('Uninstalled-Modules', 'Missing NOT AVAILABLE indicator on uninstalled external modules');
+        fail('UI-Redesign-Audit', `Removed features found: [${remainingRemoved.join(', ')}], Missing containers: [${missingDashContainers.join(', ')}]`);
     }
 
     // 3. Verify empty zone share returns 0% across all zones (not 100% optimal)

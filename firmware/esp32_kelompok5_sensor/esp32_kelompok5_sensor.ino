@@ -45,7 +45,7 @@
 #define PUMP_MAX_ON_MS      120000UL  // Cutoff keamanan maksimum pompa menyala (120 detik)
 
 // ---------------------- NETWORK & FIREBASE RTDB CONFIG ----------------------
-static const char WIFI_SSID[]     PROGMEM = "GREENHOUSE_KELOMPOK5_WIFI";
+static const char WIFI_SSID[]     PROGMEM = "KELOMPOK5_SMART_MONITOR_WIFI";
 static const char WIFI_PASS[]     PROGMEM = "CHANGE_ME_IN_PRODUCTION";
 static const char RTDB_ENDPOINT[] PROGMEM = "https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/kelompok5.json";
 static const char NTP_SERVER[]    PROGMEM = "pool.ntp.org";

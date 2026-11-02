@@ -18,20 +18,19 @@
         isValidCameraHost: raw => String(raw || '').trim()
     };
 
-    // Nav Pages Definition (12 Professional Navigation Tabs)
+    // Nav Pages Definition (11 Functional Navigation Tabs)
     const PAGES = [
-        { id: 'ringkasan', name: 'Dashboard', sub: 'Kondisi mikroklimat kebun selada saat ini', ic: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>' },
-        { id: 'greenhouse', name: 'Greenhouse', sub: 'Spesifikasi bedengan & tata letak fasilitas hidroponik', ic: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' },
-        { id: 'sensor', name: 'Sensor', sub: 'Detail dan tren tiap sensor secara mendalam', ic: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
-        { id: 'kamera', name: 'Kamera', sub: 'Pantau tanaman langsung dari ESP32-CAM', ic: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>' },
-        { id: 'pertumbuhan-daun', name: 'Pertumbuhan Daun', sub: 'Siklus 42 hari, segmentasi ExG & pengukuran kanopi', ic: '<path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="M12 6v6l4 2"/>' },
+        { id: 'ringkasan', name: 'Dashboard', sub: 'Pusat monitoring telemetri sensor fisik, kamera & pertumbuhan aktual Kelompok 5', ic: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>' },
+        { id: 'sensor', name: 'Sensor', sub: 'Detail dan tren tiap sensor fisik secara mendalam', ic: '<path d="M3 12h4l3-8 4 16 3-8h4"/>' },
+        { id: 'kamera', name: 'Kamera', sub: 'Pantau tanaman langsung dari ESP32-CAM & jadwal otonom', ic: '<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>' },
+        { id: 'pertumbuhan-daun', name: 'Pertumbuhan Daun', sub: 'Siklus 42 hari, segmentasi ExG & pengukuran kanopi aktual', ic: '<path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="M12 6v6l4 2"/>' },
         { id: 'riwayat', name: 'Riwayat', sub: 'Semua pembacaan telemetri yang diterima sesi ini', ic: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
         { id: 'analisis-tanaman', name: 'Analisis Tanaman', sub: 'Fisiologi tanaman, Tetens VPD & model termal GDD', ic: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
         { id: 'ai-assistant', name: 'AI Assistant', sub: 'Sistem pakar agronomi & asisten percakapan cerdas', ic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>' },
         { id: 'otomasi', name: 'Otomasi', sub: 'Logika histeresis SCADA & setpoint irigasi presisi', ic: '<path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
         { id: 'peringatan', name: 'Peringatan', sub: 'Aturan otomatis dan kejadian yang terdeteksi', ic: '<path d="M6 16v-5a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 21a2 2 0 0 0 4 0"/>' },
-        { id: 'pengaturan', name: 'Pengaturan', sub: 'Koneksi Firebase, kalibrasi batas, dan tampilan', ic: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>' },
-        { id: 'panduan', name: 'Panduan', sub: 'Pemasangan ESP32, pinout, dan pemecahan masalah', ic: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>' }
+        { id: 'pengaturan', name: 'Pengaturan', sub: 'Koneksi Firebase Kelompok 5, kalibrasi batas, dan tampilan', ic: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>' },
+        { id: 'panduan', name: 'Panduan', sub: 'Pemasangan ESP32 Kelompok 5, pinout, dan pemecahan masalah', ic: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>' }
     ];
 
     // Alert Rule Definitions
@@ -47,8 +46,8 @@
     class DashboardController {
         constructor() {
             this.activePage = 'ringkasan';
-            this.activeChartMetric = 'tanah';
-            this.chartTimeWindowSec = 300;
+            this.activeChartMetric = 'all';
+            this.chartTimeWindowSec = 0;
             this.sensorWinSec = 60;
             this.plantAgeHST = 0;
             this.harvestTargetHST = 42;
@@ -116,6 +115,7 @@
             const handleChartResize = () => {
                 if (this.activePage === 'ringkasan') {
                     this.renderOverviewChart();
+                    this.renderDashboardPumpChart();
                     if (window.GrowthStore) window.GrowthStore.renderMiniDashboardCharts();
                 } else if (this.activePage === 'pertumbuhan-daun') {
                     if (window.GrowthStore) window.GrowthStore.renderGrowthCharts();
@@ -1299,11 +1299,11 @@
             this.updateAIRecommendations(latest);
             this.renderDashboardAlerts(latest);
             this.updateAgronomicAnalysisPage(latest);
-            this.updateGreenhousePage(latest);
             this.updateFooterStats(latest);
 
             if (this.activePage === 'ringkasan') {
                 this.renderOverviewChart();
+                this.renderDashboardPumpChart();
                 window.DatasetStore.renderSnippetTable('datasetTableBody', 8);
                 if (window.GrowthStore) window.GrowthStore.renderMiniDashboardCharts();
             } else if (this.activePage === 'sensor') {
@@ -1416,8 +1416,29 @@
                 textHeader.textContent = headerLabel;
             }
 
+            const sumEsp = $('#sumEspStatus');
+            const sumEspSub = $('#sumEspSub');
+            const allCount = window.DatasetStore ? window.DatasetStore.getAll().length : 0;
+            if (sumEsp) {
+                if (state === 'connected') {
+                    sumEsp.textContent = 'ONLINE';
+                    sumEsp.style.color = 'var(--accent-emerald)';
+                } else if (state === 'stale') {
+                    sumEsp.textContent = 'HISTORIS';
+                    sumEsp.style.color = 'var(--accent-amber)';
+                } else if (state === 'connecting') {
+                    sumEsp.textContent = 'MENGHUBUNGKAN';
+                    sumEsp.style.color = 'var(--accent-blue)';
+                } else {
+                    sumEsp.textContent = 'OFFLINE';
+                    sumEsp.style.color = 'var(--accent-rose)';
+                }
+            }
+            if (sumEspSub) {
+                sumEspSub.textContent = allCount > 0 ? `/kelompok5 · ${allCount} Paket` : '/kelompok5 · 0 Paket';
+            }
+
             this.updateFooterStats(window.DatasetStore ? window.DatasetStore.getLatest() : null);
-            this.updateGreenhousePage(window.DatasetStore ? window.DatasetStore.getLatest() : null);
         }
 
         renderPlantAgeBanner() {
@@ -1639,36 +1660,6 @@
                         <p>Rata-rata suhu terekam <b>${meanTemp.toFixed(2)}°C</b> menghasilkan laju termal <b>${dailyGddRate.toFixed(2)} GDD/hari</b> (Tbase 4.0°C). Akumulasi total HST menunggu dimulainya kampanye citra.</p>
                     </div>
                 `;
-            }
-        }
-
-        updateGreenhousePage(record) {
-            const elTele = $('#ghNodeTelemetry');
-            const elCam = $('#ghNodeCamera');
-            const elExt = $('#ghExternalModules');
-            const elCamp = $('#ghCampaignSpec');
-
-            const allCount = window.DatasetStore ? window.DatasetStore.getAll().length : 0;
-            if (elTele) {
-                if (this.connectionState === 'connected') {
-                    elTele.textContent = `ONLINE (${allCount} Paket)`;
-                } else if (this.connectionState === 'stale') {
-                    elTele.textContent = `HISTORIS (${allCount} Paket · ESP32 Offline)`;
-                } else {
-                    elTele.textContent = `OFFLINE (${allCount} Paket)`;
-                }
-            }
-            if (elCam) {
-                const S = window.ConfigStore ? window.ConfigStore.get() : {};
-                const isCamOn = this.cam && this.cam.run;
-                elCam.textContent = isCamOn ? `ONLINE (${S.camIp})` : (S.camIp ? `OFFLINE (${S.camIp})` : 'DISCONNECTED (IP Belum Diatur)');
-            }
-            if (elExt) {
-                elExt.textContent = 'NOT AVAILABLE (EC/pH/CO2 Belum Terpasang)';
-            }
-            if (elCamp && window.GrowthStore) {
-                const st = window.GrowthStore.getCampaignStats();
-                elCamp.textContent = `${st.validCount} / ${st.targetValid} Citra Valid (42 HST)`;
             }
         }
 
@@ -2053,91 +2044,126 @@
             const wrap = $('#chartSvgWrap');
             if (!wrap) return;
 
-            const metric = this.activeChartMetric;
+            const metric = this.activeChartMetric || 'all';
             const S = window.ConfigStore.get();
-            const conv = (S.unit === 'F' && metric === 'suhu') ? (v => (v * 9 / 5) + 32) : (v => v);
-            let unit = '%';
-            if (metric === 'suhu') unit = S.unit === 'F' ? '°F' : '°C';
+            const tUnit = S.unit === 'F' ? '°F' : '°C';
+            const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
 
-            const allRecords = window.DatasetStore.getAll().filter(r => Number.isFinite(r.t) && Number.isFinite(r[metric]));
+            const allRecords = window.DatasetStore.getAll().filter(r =>
+                Number.isFinite(r.t) && Number.isFinite(r.tanah) && Number.isFinite(r.udara) && Number.isFinite(r.suhu)
+            );
+
+            const sourceReadout = $('#chartSourceReadout');
+            if (sourceReadout) {
+                if (allRecords.length === 0) {
+                    sourceReadout.textContent = 'Sumber: Firebase RTDB /kelompok5 · Status: NO DATA (0 Paket)';
+                } else {
+                    const first = allRecords[0];
+                    const last = allRecords[allRecords.length - 1];
+                    sourceReadout.textContent = `Sumber: Firebase RTDB /kelompok5 (${allRecords.length} Paket Aktual · ${window.DatasetStore.formatDateTime(first.t)} – ${window.DatasetStore.formatTime(last.t, true)})`;
+                }
+            }
 
             if (allRecords.length === 0) {
                 wrap.innerHTML = `
                     <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); font-size: 12px; padding: 24px; text-align: center;">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="opacity: 0.5;"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-                        <span style="font-weight: 600; color: var(--text-secondary);">Belum Ada Data Telemetri Aktual</span>
-                        <span style="font-size: 11px;">Status: OFFLINE / Menunggu paket telemetri tervalidasi dari sensor fisik & RTDB</span>
+                        <span style="font-weight: 600; color: var(--text-secondary);">NO DATA · Belum Ada Data Telemetri Aktual</span>
+                        <span style="font-size: 11px;">Status: OFFLINE / Menunggu paket telemetri tervalidasi dari sensor fisik & Firebase RTDB Kelompok 5</span>
                     </div>
                 `;
                 return;
             }
 
-            const w = Math.max(120, wrap.clientWidth || 320);
-            const h = Math.max(120, wrap.clientHeight || 240);
+            const now = Date.now();
+            let rows = allRecords;
+            if (this.chartTimeWindowSec > 0) {
+                const minTime = now - (this.chartTimeWindowSec * 1000);
+                rows = allRecords.filter(r => r.t >= minTime);
+                if (rows.length < 2) rows = allRecords.slice(-60);
+            }
 
-            if (allRecords.length === 1) {
-                const r = allRecords[0];
-                const val = conv(r[metric]);
+            if (rows.length > 260) {
+                const step = Math.ceil(rows.length / 200);
+                rows = rows.filter((_, idx) => idx % step === 0 || idx === rows.length - 1);
+            }
+
+            const w = Math.max(180, wrap.clientWidth || 640);
+            const h = Math.max(160, wrap.clientHeight || 280);
+            const isMobile = w < 480;
+            const pad = isMobile
+                ? { top: 16, right: 16, bottom: 26, left: 40 }
+                : { top: 18, right: 28, bottom: 30, left: 48 };
+            const innerW = Math.max(20, w - pad.left - pad.right);
+            const innerH = Math.max(20, h - pad.top - pad.bottom);
+
+            const getPumpState = r => {
+                if (typeof r.relayActual === 'boolean') return r.relayActual ? 1 : 0;
+                return r.tanah < S.dry ? 1 : 0;
+            };
+
+            if (rows.length === 1) {
+                const r = rows[0];
                 const midY = h / 2;
                 wrap.innerHTML = `
                     <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
-                        <line class="grid-line" x1="44" y1="${midY}" x2="${w - 24}" y2="${midY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
+                        <line class="grid-line" x1="${pad.left}" y1="${midY}" x2="${w - pad.right}" y2="${midY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
                         <circle class="data-dot" cx="${w / 2}" cy="${midY}" r="6" />
-                        <text class="axis-text" x="${w / 2}" y="${midY - 12}" text-anchor="middle">${val.toFixed(1)}${unit} (${window.DatasetStore.formatTime(r.t, true)})</text>
-                        <text class="axis-text" x="${w / 2}" y="${h - 8}" text-anchor="middle">1 data poin terekam</text>
+                        <text class="axis-text" x="${w / 2}" y="${midY - 12}" text-anchor="middle">Tanah ${Math.round(r.tanah)}% · Udara ${Math.round(r.udara)}% · Suhu ${convTemp(r.suhu).toFixed(1)}${tUnit} (${window.DatasetStore.formatTime(r.t, true)})</text>
+                        <text class="axis-text" x="${w / 2}" y="${h - 8}" text-anchor="middle">1 data poin aktual terekam</text>
                     </svg>
                 `;
                 return;
             }
 
-            const now = Date.now();
-            const minTime = now - (this.chartTimeWindowSec * 1000);
-            let rows = allRecords.filter(r => r.t >= minTime);
-            if (rows.length < 2) rows = allRecords.slice(-40);
-
-            // Decimate if too many records (> 300) to keep DOM rendering 60fps
-            if (rows.length > 300) {
-                const step = Math.ceil(rows.length / 200);
-                rows = rows.filter((_, idx) => idx % step === 0 || idx === rows.length - 1);
-            }
-
-            const isMobile = w < 480;
-            const pad = isMobile 
-                ? { top: 14, right: 14, bottom: 24, left: 36 } 
-                : { top: 16, right: 24, bottom: 28, left: 44 };
-            const innerW = Math.max(20, w - pad.left - pad.right);
-            const innerH = Math.max(20, h - pad.top - pad.bottom);
-
-            let yMin = 0, yMax = 100, band = null;
-            if (metric === 'tanah') {
-                yMin = 40; yMax = 100; unit = '%';
-                band = [S.dry, S.wet];
-            } else if (metric === 'udara') {
-                yMin = 40; yMax = 100; unit = '%';
-                band = [60, 80];
-            } else if (metric === 'suhu') {
-                const temps = rows.map(r => conv(r.suhu)).filter(v => Number.isFinite(v));
-                yMin = Math.floor(Math.min(...temps) - 2);
-                yMax = Math.ceil(Math.max(...temps) + 2);
-                unit = S.unit === 'F' ? '°F' : '°C';
-                band = [conv(15), conv(24)];
-            }
-
             const t0 = rows[0].t;
             const t1 = rows[rows.length - 1].t;
-            const timeSpan = Math.max(t1 - t0, 10000);
+            const timeSpan = Math.max(t1 - t0, 1000);
+            const getX = (t, idx) => (t1 === t0)
+                ? pad.left + (idx / Math.max(1, rows.length - 1)) * innerW
+                : pad.left + ((t - t0) / timeSpan) * innerW;
 
-            const getX = t => pad.left + ((t - t0) / timeSpan) * innerW;
-            const getY = val => pad.top + (1 - (val - yMin) / (Math.max(1, yMax - yMin))) * innerH;
+            let yMin = 0, yMax = 100, unit = '%', band = null;
+            if (metric === 'all') {
+                yMin = 0; yMax = 100; unit = '%/°';
+                band = [S.dry, S.wet];
+            } else if (metric === 'tanah') {
+                yMin = 20; yMax = 100; unit = '%';
+                band = [S.dry, S.wet];
+            } else if (metric === 'udara') {
+                yMin = 20; yMax = 100; unit = '%';
+                band = [60, 80];
+            } else if (metric === 'suhu') {
+                const temps = rows.map(r => convTemp(r.suhu));
+                yMin = Math.floor(Math.min(...temps) - 2);
+                yMax = Math.ceil(Math.max(...temps) + 2);
+                unit = tUnit;
+                band = [convTemp(15), convTemp(24)];
+            } else if (metric === 'pompa') {
+                yMin = 0; yMax = 1; unit = '';
+            }
+
+            const getY = val => pad.top + (1 - (val - yMin) / Math.max(0.1, yMax - yMin)) * innerH;
 
             let gridHtml = '';
-            for (let i = 0; i <= 4; i++) {
-                const tickVal = yMin + (i / 4) * (yMax - yMin);
-                const y = getY(tickVal);
-                gridHtml += `
-                    <line class="grid-line" x1="${pad.left}" y1="${y}" x2="${w - pad.right}" y2="${y}" />
-                    <text class="axis-text" x="${pad.left - 6}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${Sec.escapeHTML(unit)}</text>
+            if (metric === 'pompa') {
+                const yOn = getY(1);
+                const yOff = getY(0);
+                gridHtml = `
+                    <line class="grid-line" x1="${pad.left}" y1="${yOn}" x2="${w - pad.right}" y2="${yOn}" />
+                    <text class="axis-text" x="${pad.left - 6}" y="${yOn + 4}" text-anchor="end">ON (1)</text>
+                    <line class="grid-line" x1="${pad.left}" y1="${yOff}" x2="${w - pad.right}" y2="${yOff}" />
+                    <text class="axis-text" x="${pad.left - 6}" y="${yOff + 4}" text-anchor="end">OFF (0)</text>
                 `;
+            } else {
+                for (let i = 0; i <= 4; i++) {
+                    const tickVal = yMin + (i / 4) * (yMax - yMin);
+                    const y = getY(tickVal);
+                    gridHtml += `
+                        <line class="grid-line" x1="${pad.left}" y1="${y}" x2="${w - pad.right}" y2="${y}" />
+                        <text class="axis-text" x="${pad.left - 6}" y="${y + 3}" text-anchor="end">${Math.round(tickVal)}${Sec.escapeHTML(unit === '%/°' ? '' : unit)}</text>
+                    `;
+                }
             }
 
             let bandHtml = '';
@@ -2160,25 +2186,213 @@
                 timeLabelsHtml += `<text class="axis-text" x="${x}" y="${h - 6}" text-anchor="${anchor}">${Sec.escapeHTML(window.DatasetStore.formatTime(tx, true))}</text>`;
             }
 
-            const points = rows.map(r => [getX(r.t), getY(conv(r[metric]))]);
-            const pathD = 'M' + points.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
-            const areaD = `${pathD} L${points[points.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${points[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
-            const lastPt = points[points.length - 1];
+            let pathsHtml = '';
+            if (metric === 'all') {
+                const ptsSoil = rows.map((r, idx) => [getX(r.t, idx), getY(r.tanah)]);
+                const ptsAir = rows.map((r, idx) => [getX(r.t, idx), getY(r.udara)]);
+                const ptsTemp = rows.map((r, idx) => [getX(r.t, idx), getY(convTemp(r.suhu))]);
+
+                const dSoil = 'M' + ptsSoil.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                const dAir = 'M' + ptsAir.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                const dTemp = 'M' + ptsTemp.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                const areaSoil = `${dSoil} L${ptsSoil[ptsSoil.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${ptsSoil[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+
+                pathsHtml = `
+                    <path d="${areaSoil}" fill="url(#emeraldGrad)" />
+                    <path d="${dSoil}" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="${dAir}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="${dTemp}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${ptsSoil[ptsSoil.length - 1][0]}" cy="${ptsSoil[ptsSoil.length - 1][1]}" r="4" fill="#10b981" stroke="#090d16" stroke-width="1.5" />
+                    <circle cx="${ptsAir[ptsAir.length - 1][0]}" cy="${ptsAir[ptsAir.length - 1][1]}" r="4" fill="#3b82f6" stroke="#090d16" stroke-width="1.5" />
+                    <circle cx="${ptsTemp[ptsTemp.length - 1][0]}" cy="${ptsTemp[ptsTemp.length - 1][1]}" r="4" fill="#f59e0b" stroke="#090d16" stroke-width="1.5" />
+                `;
+            } else if (metric === 'pompa') {
+                const pts = [];
+                rows.forEach((r, idx) => {
+                    const x = getX(r.t, idx);
+                    const y = getY(getPumpState(r));
+                    if (idx > 0) {
+                        pts.push([x, pts[pts.length - 1][1]]);
+                    }
+                    pts.push([x, y]);
+                });
+                const dStep = 'M' + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                const areaStep = `${dStep} L${pts[pts.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${pts[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+                const lastPt = pts[pts.length - 1];
+                pathsHtml = `
+                    <path d="${areaStep}" fill="url(#roseGrad)" />
+                    <path d="${dStep}" fill="none" stroke="#f43f5e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" fill="#f43f5e" stroke="#090d16" stroke-width="1.5" />
+                `;
+            } else {
+                const color = metric === 'tanah' ? '#10b981' : (metric === 'suhu' ? '#f59e0b' : '#3b82f6');
+                const gradId = metric === 'tanah' ? 'emeraldGrad' : (metric === 'suhu' ? 'amberGrad' : 'blueGradient');
+                const points = rows.map((r, idx) => [getX(r.t, idx), getY(metric === 'suhu' ? convTemp(r.suhu) : r[metric])]);
+                const pathD = 'M' + points.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                const areaD = `${pathD} L${points[points.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${points[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+                const lastPt = points[points.length - 1];
+                pathsHtml = `
+                    <path d="${areaD}" fill="url(#${gradId})" />
+                    <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle class="data-dot" cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" style="fill:${color};" />
+                `;
+            }
 
             wrap.innerHTML = `
-                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden; width:100%; height:100%;">
+                <svg id="overviewSvgChart" width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden; width:100%; height:100%; cursor:crosshair;">
                     <defs>
                         <linearGradient id="blueGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.35" />
+                            <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.32" />
                             <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="amberGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0" />
+                        </linearGradient>
+                        <linearGradient id="roseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.0" />
                         </linearGradient>
                     </defs>
                     ${gridHtml}
                     ${bandHtml}
                     ${timeLabelsHtml}
-                    <path class="data-area" d="${areaD}" />
-                    <path class="data-line" d="${pathD}" />
-                    <circle class="data-dot" cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" />
+                    ${pathsHtml}
+                    <line id="overviewHoverLine" x1="0" y1="${pad.top}" x2="0" y2="${pad.top + innerH}" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="3 3" style="display:none;" />
+                </svg>
+                <div id="chartTooltip" class="chart-tooltip" style="display:none;"></div>
+            `;
+
+            const svgEl = $('#overviewSvgChart', wrap);
+            const hoverLine = $('#overviewHoverLine', wrap);
+            const tooltip = $('#chartTooltip', wrap);
+            if (svgEl && tooltip && rows.length > 0) {
+                const showHover = clientX => {
+                    const rect = svgEl.getBoundingClientRect();
+                    if (!rect.width) return;
+                    const relX = Math.max(0, Math.min(1, (clientX - rect.left - pad.left) / Math.max(1, rect.width - pad.left - pad.right)));
+                    const idx = Math.min(rows.length - 1, Math.max(0, Math.round(relX * (rows.length - 1))));
+                    const r = rows[idx];
+                    const xSvg = getX(r.t, idx);
+                    if (hoverLine) {
+                        hoverLine.setAttribute('x1', xSvg.toFixed(1));
+                        hoverLine.setAttribute('x2', xSvg.toFixed(1));
+                        hoverLine.style.display = 'block';
+                    }
+                    const pumpOn = getPumpState(r) === 1;
+                    tooltip.style.display = 'block';
+                    const leftPx = Math.min(Math.max(8, (xSvg / w) * rect.width - 90), Math.max(8, rect.width - 195));
+                    tooltip.style.left = `${leftPx}px`;
+                    tooltip.style.top = '10px';
+                    tooltip.innerHTML = `
+                        <div class="tt-time tabular-nums">${Sec.escapeHTML(window.DatasetStore.formatDateTime(r.t))} WIB</div>
+                        <div class="tt-row"><span style="color:#10b981;">● Tanah:</span> <b class="tabular-nums">${Math.round(r.tanah)}%</b></div>
+                        <div class="tt-row"><span style="color:#3b82f6;">● Udara:</span> <b class="tabular-nums">${Math.round(r.udara)}%</b></div>
+                        <div class="tt-row"><span style="color:#f59e0b;">● Suhu:</span> <b class="tabular-nums">${convTemp(r.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b></div>
+                        <div class="tt-row"><span style="color:#f43f5e;">● Pompa/Relay:</span> <b class="tabular-nums">${pumpOn ? 'ON (Aktif)' : 'OFF (Siaga)'}</b></div>
+                    `;
+                };
+                const hideHover = () => {
+                    if (hoverLine) hoverLine.style.display = 'none';
+                    tooltip.style.display = 'none';
+                };
+                svgEl.addEventListener('mousemove', e => showHover(e.clientX));
+                svgEl.addEventListener('mouseleave', hideHover);
+                svgEl.addEventListener('touchstart', e => {
+                    if (e.touches && e.touches[0]) showHover(e.touches[0].clientX);
+                }, { passive: true });
+                svgEl.addEventListener('touchmove', e => {
+                    if (e.touches && e.touches[0]) showHover(e.touches[0].clientX);
+                }, { passive: true });
+            }
+        }
+
+        renderDashboardPumpChart() {
+            const wrap = $('#dashPumpChartWrap');
+            const badge = $('#dashBadgePumpChart');
+            if (!wrap) return;
+
+            const S = window.ConfigStore.get();
+            const allRecords = window.DatasetStore.getAll().filter(r => Number.isFinite(r.t) && Number.isFinite(r.tanah));
+
+            if (allRecords.length === 0) {
+                if (badge) {
+                    badge.textContent = 'NO DATA';
+                    badge.className = 'badge-tag slate tabular-nums';
+                }
+                wrap.innerHTML = `
+                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-muted); font-size: 11px; padding: 14px; text-align: center;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="opacity: 0.45;"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        <span style="font-weight: 600; color: var(--text-secondary);">NO DATA · Riwayat Status Pompa / Relay</span>
+                        <span>Menunggu telemetri sensor fisik & status relay aktual dari Firebase Kelompok 5</span>
+                    </div>
+                `;
+                return;
+            }
+
+            let rows = allRecords;
+            if (rows.length > 180) {
+                const step = Math.ceil(rows.length / 150);
+                rows = rows.filter((_, idx) => idx % step === 0 || idx === rows.length - 1);
+            }
+
+            const getPumpState = r => {
+                if (typeof r.relayActual === 'boolean') return r.relayActual ? 1 : 0;
+                return r.tanah < S.dry ? 1 : 0;
+            };
+
+            const onCount = rows.filter(r => getPumpState(r) === 1).length;
+            const latestOn = getPumpState(rows[rows.length - 1]) === 1;
+            if (badge) {
+                badge.textContent = latestOn ? `POMPA: ON (${onCount}/${rows.length} Siklus)` : `SIAGA: OFF (${onCount}/${rows.length} ON)`;
+                badge.className = latestOn ? 'badge-tag rose tabular-nums' : 'badge-tag emerald tabular-nums';
+            }
+
+            const w = Math.max(160, wrap.clientWidth || 360);
+            const h = Math.max(120, wrap.clientHeight || 175);
+            const pad = { top: 16, right: 18, bottom: 24, left: 44 };
+            const innerW = Math.max(20, w - pad.left - pad.right);
+            const innerH = Math.max(20, h - pad.top - pad.bottom);
+
+            const t0 = rows[0].t;
+            const t1 = rows[rows.length - 1].t;
+            const span = Math.max(1000, t1 - t0);
+            const getX = (t, i) => (t1 === t0)
+                ? pad.left + (i / Math.max(1, rows.length - 1)) * innerW
+                : pad.left + ((t - t0) / span) * innerW;
+            const getY = st => st === 1 ? pad.top + 8 : pad.top + innerH - 6;
+
+            const pts = [];
+            rows.forEach((r, idx) => {
+                const x = getX(r.t, idx);
+                const y = getY(getPumpState(r));
+                if (idx > 0) pts.push([x, pts[pts.length - 1][1]]);
+                pts.push([x, y]);
+            });
+            const dStep = 'M' + pts.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+            const areaStep = `${dStep} L${pts[pts.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${pts[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+
+            wrap.innerHTML = `
+                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
+                    <defs>
+                        <linearGradient id="pumpStepGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.3" />
+                            <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.02" />
+                        </linearGradient>
+                    </defs>
+                    <line x1="${pad.left}" y1="${getY(1)}" x2="${w - pad.right}" y2="${getY(1)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3" />
+                    <line x1="${pad.left}" y1="${getY(0)}" x2="${w - pad.right}" y2="${getY(0)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3" />
+                    <text x="${pad.left - 6}" y="${getY(1) + 3}" fill="#f43f5e" font-size="9" font-family="var(--font-mono)" text-anchor="end">ON</text>
+                    <text x="${pad.left - 6}" y="${getY(0) + 3}" fill="#10b981" font-size="9" font-family="var(--font-mono)" text-anchor="end">OFF</text>
+                    <text x="${pad.left}" y="${h - 5}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="start">${Sec.escapeHTML(window.DatasetStore.formatTime(t0, true))}</text>
+                    <text x="${w - pad.right}" y="${h - 5}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="end">${Sec.escapeHTML(window.DatasetStore.formatTime(t1, true))}</text>
+                    <path d="${areaStep}" fill="url(#pumpStepGrad)" />
+                    <path d="${dStep}" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${pts[pts.length - 1][0]}" cy="${pts[pts.length - 1][1]}" r="4" fill="${latestOn ? '#f43f5e' : '#10b981'}" stroke="#090d16" stroke-width="1.5" />
                 </svg>
             `;
         }

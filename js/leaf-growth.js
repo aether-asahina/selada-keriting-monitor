@@ -615,6 +615,7 @@
         }
 
         renderGallery() {
+            this.renderDashboardCaptureGallery();
             const grid = document.getElementById('growthGalleryGrid');
             if (!grid) return;
 
@@ -763,14 +764,69 @@
             }
         }
 
-        renderMiniDashboardCharts() {
-            const valid = this.records.filter(r => r.quality_status === 'VALID').sort((a, b) => a.captured_at - b.captured_at);
-            if (valid.length === 0) {
-                this.renderEmptyChartState('miniChartWidth', 'Belum ada data');
-                this.renderEmptyChartState('miniChartArea', 'Belum ada data');
-                this.renderEmptyChartState('miniChartGrowthRate', 'Belum ada data');
-                this.renderEmptyChartState('miniChartGDD', 'Belum ada data');
+        renderDashboardCaptureGallery() {
+            const dashGallery = document.getElementById('dashCaptureGallery');
+            if (!dashGallery) return;
+
+            if (this.records.length === 0) {
+                dashGallery.innerHTML = `
+                    <div class="dash-gallery-empty">
+                        <span>NO DATA · Belum Ada Hasil Capture Aktual (0 / 1.600 Foto Valid)</span>
+                    </div>
+                `;
                 return;
+            }
+
+            dashGallery.innerHTML = this.records.slice(0, 4).map(r => {
+                const isValid = r.quality_status === 'VALID';
+                const imgSrc = r.overlay_url || r.image_url || '';
+                return `
+                    <div class="dash-gallery-thumb" data-img-id="${Sec.escapeHTML(r.image_id)}" title="${Sec.escapeHTML(r.image_id)}">
+                        ${imgSrc ? `<img src="${Sec.escapeHTML(imgSrc)}" alt="${Sec.escapeHTML(r.image_id)}" loading="lazy">` : `<div class="dash-thumb-placeholder">HST ${r.hst_day}</div>`}
+                        <span class="dash-thumb-meta tabular-nums">${isValid ? `${r.leaf_width_px}px` : 'QC'}</span>
+                    </div>
+                `;
+            }).join('');
+
+            dashGallery.querySelectorAll('.dash-gallery-thumb').forEach(item => {
+                item.addEventListener('click', () => this.openDetailModal(item.dataset.imgId));
+            });
+        }
+
+        renderMiniDashboardCharts() {
+            this.renderDashboardCaptureGallery();
+            const valid = this.records.filter(r => r.quality_status === 'VALID').sort((a, b) => a.captured_at - b.captured_at);
+            const dashGrowthWrap = document.getElementById('dashGrowthChartWrap');
+            const dashGrowthBadge = document.getElementById('dashBadgeGrowthChart');
+
+            if (valid.length === 0) {
+                if (dashGrowthBadge) {
+                    dashGrowthBadge.textContent = 'NO DATA (0 / 1.600)';
+                    dashGrowthBadge.className = 'badge-tag slate tabular-nums';
+                }
+                if (dashGrowthWrap) {
+                    dashGrowthWrap.innerHTML = `
+                        <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-muted); font-size: 11px; padding: 14px; text-align: center;">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" style="opacity: 0.45;"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="M12 6v6l4 2"/></svg>
+                            <span style="font-weight: 600; color: var(--text-secondary);">NO DATA · Progres Pertumbuhan Citra Aktual</span>
+                            <span>Belum ada tangkapan citra ESP32-CAM tervalidasi (0 / 1.600 foto valid)</span>
+                        </div>
+                    `;
+                }
+                this.renderEmptyChartState('miniChartWidth', 'NO DATA');
+                this.renderEmptyChartState('miniChartArea', 'NO DATA');
+                this.renderEmptyChartState('miniChartGrowthRate', 'NO DATA');
+                this.renderEmptyChartState('miniChartGDD', 'NO DATA');
+                return;
+            }
+
+            if (dashGrowthBadge) {
+                const last = valid[valid.length - 1];
+                dashGrowthBadge.textContent = `HST ${last.hst_day} · ${last.leaf_width_px}px / ${last.leaf_area_px}px²`;
+                dashGrowthBadge.className = 'badge-tag emerald tabular-nums';
+            }
+            if (dashGrowthWrap) {
+                this.renderGrowthSVGChart('dashGrowthChartWrap', valid, r => r.leaf_width_px, 'px', '#10b981');
             }
 
             this.renderGrowthSVGChart('miniChartWidth', valid, r => r.leaf_width_px, 'px', '#3b82f6');
