@@ -165,7 +165,7 @@
         fetchN: 300,
         unit: 'C',
         clock: '24',
-        theme: 'dark',
+        theme: 'light',
         dry: 65, // Standard optimal range for Selada Keriting (65-78%)
         wet: 78,
         camIp: '',
@@ -207,6 +207,14 @@
                 }
             } catch (e) {
                 console.warn('[ConfigStore] Failed to load settings from storage:', e);
+            }
+
+            // Migrasi satu kali: redesign UI v2 memakai tema terang sebagai bawaan.
+            // Pengaturan lain (URL Firebase, IP kamera, ambang batas) tidak disentuh.
+            if (!this.S.uiV2) {
+                this.S.theme = 'light';
+                this.S.uiV2 = true;
+                try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.S)); } catch (_) { /* abaikan */ }
             }
 
             if (!SecurityUtils.isValidFirebaseUrl(this.S.firebase)) {
