@@ -53,14 +53,17 @@ CONFIG = {
     "log_file": "data/scheduler_daemon.log"
 }
 
-def log(msg, level="INFO"):
+def log(msg, level="INFO", log_file=None):
     dt_wib = datetime.now(WIB_TIMEZONE)
     timestamp_str = dt_wib.strftime("%Y-%m-%d %H:%M:%S WIB")
     line = f"[{timestamp_str}] [{level}] {msg}"
     print(line)
+    target_log = log_file or CONFIG["log_file"]
     try:
-        os.makedirs(os.path.dirname(CONFIG["log_file"]), exist_ok=True)
-        with open(CONFIG["log_file"], "a", encoding="utf-8") as f:
+        log_dir = os.path.dirname(target_log)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with open(target_log, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
         pass
@@ -68,12 +71,17 @@ def log(msg, level="INFO"):
 class LeafGrowthScheduler:
     def __init__(self, config=None):
         self.cfg = config or CONFIG
+        self.log_file = self.cfg.get("log_file", CONFIG["log_file"])
         self.pipeline = LettuceCVPipeline(
             output_dir=self.cfg["images_dir"],
-            meta_file=self.cfg["metadata_path"]
+            meta_file=self.cfg["metadata_path"],
+            calib_factor_mm_per_px=self.cfg.get("calib_factor_mm_per_px", None)
         )
         self.executed_slots = set()
         self.load_history()
+
+    def _log(self, msg, level="INFO"):
+        log(msg, level=level, log_file=self.log_file)
 
     def get_wib_now(self):
         return datetime.now(WIB_TIMEZONE)
@@ -103,9 +111,9 @@ class LeafGrowthScheduler:
                         if "captured_at" in r:
                             dt = datetime.fromtimestamp(r["captured_at"] / 1000, tz=WIB_TIMEZONE)
                             self.executed_slots.add(self.get_slot_key(dt))
-                log(f"Recovery complete. Loaded {len(self.executed_slots)} historical execution slots.")
+                self._log(f"Recovery complete. Loaded {len(self.executed_slots)} historical execution slots.")
             except Exception as e:
-                log(f"Failed to read historical metadata: {e}", "WARN")
+                self._log(f"Failed to read historical metadata: {e}", "WARN")
 
     def capture_from_camera(self, host):
         """Attempts HTTP snapshot capture from physical ESP32-CAM."""
@@ -114,15 +122,15 @@ class LeafGrowthScheduler:
         
         for attempt in range(1, self.cfg["max_retries"] + 1):
             try:
-                log(f"Attempting camera capture from {snapshot_url} (attempt {attempt}/{self.cfg['max_retries']})...")
+                self._log(f"Attempting camera capture from {snapshot_url} (attempt {attempt}/{self.cfg['max_retries']})...")
                 with urllib.request.urlopen(req, timeout=self.cfg["camera_timeout_seconds"]) as resp:
                     if resp.status == 200:
                         img_bytes = resp.read()
                         pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
-                        log("Camera capture successful.")
+                        self._log("Camera capture successful.")
                         return pil_img, None
             except Exception as e:
-                log(f"Capture attempt {attempt} failed: {e}", "WARN")
+                self._log(f"Capture attempt {attempt} failed: {e}", "WARN")
                 if attempt < self.cfg["max_retries"]:
                     time.sleep(self.cfg["retry_delay_seconds"])
         
@@ -155,23 +163,23 @@ class LeafGrowthScheduler:
 
         self.pipeline._append_metadata(record)
         self.executed_slots.add(slot_key)
-        log(f"Recorded capture failure for slot {slot_key}: {error_msg}", "ERROR")
+        self._log(f"Recorded capture failure for slot {slot_key}: {error_msg}", "ERROR")
         return record
 
-    def run_slot(self, force=False, hst_day=24):
+    def run_slot(self, force=False, hst_day=1):
         """Executes a 10-minute capture slot with 100% genuine data discipline."""
         now_wib = self.get_wib_now()
         slot_key = self.get_slot_key(now_wib)
 
         if not force and slot_key in self.executed_slots:
-            log(f"Slot {slot_key} already executed. Skipping to prevent duplicate.")
+            self._log(f"Slot {slot_key} already executed. Skipping to prevent duplicate.")
             return None
 
         if not force and not self.is_within_window(now_wib):
-            log(f"Current time {now_wib.strftime('%H:%M WIB')} is outside capture window ({self.cfg['start_time_wib']} - {self.cfg['end_time_wib']} WIB).")
+            self._log(f"Current time {now_wib.strftime('%H:%M WIB')} is outside capture window ({self.cfg['start_time_wib']} - {self.cfg['end_time_wib']} WIB).")
             return None
 
-        log(f"=== Starting Scheduled Capture Slot: {slot_key} ===")
+        self._log(f"=== Starting Scheduled Capture Slot: {slot_key} ===")
         pil_img, err = self.capture_from_camera(self.cfg["camera_host"])
 
         if pil_img is None:
@@ -189,7 +197,7 @@ class LeafGrowthScheduler:
         )
 
         self.executed_slots.add(slot_key)
-        log(f"Slot {slot_key} completed successfully: Width={res['leaf_width_px']}px, Area={res['leaf_area_px']}px2, QC={res['quality_status']}")
+        self._log(f"Slot {slot_key} completed successfully: Width={res['leaf_width_px']}px, Area={res['leaf_area_px']}px2, QC={res['quality_status']}")
         return res
 
     def print_status(self):
@@ -224,7 +232,7 @@ class LeafGrowthScheduler:
 
     def run_daemon(self, poll_interval_sec=15):
         """Runs the continuous scheduler daemon loop."""
-        log("Leaf Growth Scheduler Daemon started. Monitoring slots...")
+        self._log("Leaf Growth Scheduler Daemon started. Monitoring slots...")
         self.print_status()
 
         while True:
@@ -237,10 +245,10 @@ class LeafGrowthScheduler:
                         self.run_slot()
                 time.sleep(poll_interval_sec)
             except KeyboardInterrupt:
-                log("Scheduler Daemon stopped by user.")
+                self._log("Scheduler Daemon stopped by user.")
                 break
             except Exception as e:
-                log(f"Unexpected error in daemon loop: {e}", "ERROR")
+                self._log(f"Unexpected error in daemon loop: {e}", "ERROR")
                 time.sleep(poll_interval_sec)
 
 if __name__ == "__main__":

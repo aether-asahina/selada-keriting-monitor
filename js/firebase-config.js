@@ -314,9 +314,10 @@
         normalizeRecord(obj, keyOrTimestamp, source = 'live') {
             if (!obj || typeof obj !== 'object') return null;
 
-            const decodedTime = typeof keyOrTimestamp === 'number'
+            const explicitTime = Number(obj.timestamp) || Number(obj.t) || null;
+            const decodedTime = explicitTime || (typeof keyOrTimestamp === 'number'
                 ? keyOrTimestamp
-                : (decodePushTimestamp(keyOrTimestamp) || Date.now());
+                : (decodePushTimestamp(keyOrTimestamp) || Date.now()));
             const validatedTime = SecurityUtils.validateTimestamp(decodedTime, Date.now());
 
             // Sensor physical boundary checks for Selada Keriting (Lactuca sativa L.)
@@ -356,23 +357,30 @@
                 return norm ? [norm] : [];
             }
 
-            // Nested inside 'kelompok2'
-            if (json.kelompok2 && typeof json.kelompok2 === 'object') {
-                return this.parseDatabaseResponse(json.kelompok2, source);
-            }
+            const rowMap = new Map();
 
-            const rows = [];
-            const keys = Object.keys(json).sort();
-            for (const key of keys) {
-                const item = json[key];
-                if (item && typeof item === 'object') {
-                    const parsed = this.normalizeRecord(item, key, source);
-                    if (parsed) {
-                        rows.push(parsed);
+            // 1. Extract nested 'kelompok2' records if present
+            if (json.kelompok2 && typeof json.kelompok2 === 'object') {
+                for (const key of Object.keys(json.kelompok2)) {
+                    const item = json.kelompok2[key];
+                    if (item && typeof item === 'object') {
+                        const parsed = this.normalizeRecord(item, key, source);
+                        if (parsed) rowMap.set(parsed.t, parsed);
                     }
                 }
             }
-            return rows;
+
+            // 2. Extract root-level push records (ignoring non-telemetry nodes like 'kelompok2' and 'settings')
+            for (const key of Object.keys(json)) {
+                if (key === 'kelompok2' || key === 'settings') continue;
+                const item = json[key];
+                if (item && typeof item === 'object') {
+                    const parsed = this.normalizeRecord(item, key, source);
+                    if (parsed) rowMap.set(parsed.t, parsed);
+                }
+            }
+
+            return Array.from(rowMap.values()).sort((a, b) => a.t - b.t);
         }
 
         async fetchRows(url, n, signalMs = 6000) {
@@ -410,7 +418,7 @@
                 if (!SecurityUtils.isValidFirebaseUrl(url)) {
                     return { ok: false, error: 'URL Firebase harus berakhiran .firebaseio.com atau .firebasedatabase.app' };
                 }
-                const rows = await this.fetchRows(url, 1, 6000);
+                const rows = await this.fetchRows(url, 5, 6000);
                 return {
                     ok: true,
                     count: rows.length,
@@ -447,9 +455,23 @@
 
                 if (rows.length > 0) {
                     this.currentSource = 'live';
-                    this.connectionState = 'connected';
                     this.mergeLiveData(rows);
-                    this.notifyStatus('connected', 'Telemetri Live (Firebase RTDB)');
+
+                    const latestRow = rows[rows.length - 1];
+                    const ageSec = Math.max(0, Math.round((Date.now() - latestRow.t) / 1000));
+                    const offlineThresholdSec = (S.rules && S.rules.off && Number.isFinite(S.rules.off.v)) ? S.rules.off.v : 15;
+
+                    if (ageSec > offlineThresholdSec) {
+                        this.connectionState = 'stale';
+                        const dStr = new Date(latestRow.t).toLocaleString('id-ID', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+                        });
+                        this.notifyStatus('stale', `RTDB Terhubung · ESP32 Offline (Terakhir: ${dStr})`);
+                    } else {
+                        this.connectionState = 'connected';
+                        this.notifyStatus('connected', 'Telemetri Live (ESP32 & Firebase RTDB Aktif)');
+                    }
                 } else if (this.liveRecords.length === 0) {
                     // Firebase reachable but completely empty of physical telemetry
                     this.currentSource = 'live';
@@ -462,6 +484,7 @@
                     // Fallback to genuine cached records
                     this.currentSource = 'cache';
                     this.connectionState = 'offline';
+                    this.liveRecords.forEach(r => { r.source = 'cache'; });
                     this.notifyStatus('offline', 'Offline Cache (Jaringan Terputus)');
                     // Trigger UI update using cached genuine records
                     this.notifyData(this.liveRecords, []);
@@ -483,14 +506,19 @@
         mergeLiveData(newRows) {
             if (!Array.isArray(newRows) || newRows.length === 0) return;
 
-            const existingTimes = new Set(this.liveRecords.map(r => r.t));
+            const existingByTime = new Map(this.liveRecords.map(r => [r.t, r]));
             let added = [];
+            let upgraded = 0;
 
             for (const row of newRows) {
-                if (!existingTimes.has(row.t)) {
+                const existing = existingByTime.get(row.t);
+                if (!existing) {
                     this.liveRecords.push(row);
-                    existingTimes.add(row.t);
+                    existingByTime.set(row.t, row);
                     added.push(row);
+                } else if (existing.source !== 'live') {
+                    existing.source = 'live';
+                    upgraded++;
                 }
             }
 
@@ -500,7 +528,7 @@
                 this.liveRecords = this.liveRecords.slice(-3600);
             }
 
-            if (added.length > 0) {
+            if (added.length > 0 || upgraded > 0) {
                 this.saveCache();
                 this.notifyData(this.liveRecords, added);
             }

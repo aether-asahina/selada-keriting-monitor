@@ -189,7 +189,7 @@ class LettuceCVPipeline:
 
         return overlay.convert("RGB")
 
-    def process_image(self, input_image, plant_id="SLD-01", hst_day=24, timestamp=None, camera_id="ESP32-CAM-01"):
+    def process_image(self, input_image, plant_id="SLD-01", hst_day=1, timestamp=None, camera_id="ESP32-CAM-01"):
         """
         Full end-to-end processing execution.
         input_image: PIL.Image or path string.

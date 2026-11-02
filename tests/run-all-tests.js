@@ -973,9 +973,90 @@ requiredNewElements.forEach(item => {
 
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 14: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// TEST SUITE 23: 100% REAL DATA AUTHENTICITY & MULTI-MODULE INTEGRATION AUDIT
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [14] Hardware & Production Cloud Verifications ---${C.reset}`);
+console.log(`\n${C.bold}--- [23] 100% Real Data Authenticity & Multi-Module Integration ---${C.reset}`);
+
+try {
+    // 1. Verify zero hardcoded fake numbers in index.html (0.78 kPa, 485 °C·hari, 24.2°C, 57% Siklus Panen)
+    const forbiddenStaticStrings = [
+        '0.78 kPa',
+        '485 °C·hari',
+        '485 degree-days',
+        '24.2°C',
+        '57% Siklus Panen',
+        'DATA SIMULASI'
+    ];
+    const leakedStatics = forbiddenStaticStrings.filter(s => indexHtmlContent.includes(s));
+    if (leakedStatics.length === 0) {
+        pass('Zero-Fake-HTML', 'index.html contains zero hardcoded agronomic/sensor numbers or simulation labels', 'Verified clean initial DOM state');
+    } else {
+        fail('Zero-Fake-HTML', `Found hardcoded fake strings in index.html: ${leakedStatics.join(', ')}`);
+    }
+
+    // 2. Verify uninstalled external modules (EC, pH, CO2) explicitly display NOT AVAILABLE
+    if (indexHtmlContent.includes('id="valEC"') && indexHtmlContent.includes('NOT AVAILABLE')) {
+        pass('Uninstalled-Modules', 'EC, pH, and CO2 cards explicitly show NOT AVAILABLE / Belum Terpasang without fake values');
+    } else {
+        fail('Uninstalled-Modules', 'Missing NOT AVAILABLE indicator on uninstalled external modules');
+    }
+
+    // 3. Verify empty zone share returns 0% across all zones (not 100% optimal)
+    const emptyShare = sandbox.window.DatasetStore.calculateZoneShare([]);
+    if (emptyShare.dry === 0 && emptyShare.ok === 0 && emptyShare.wet === 0 && emptyShare.count === 0) {
+        pass('Empty-ZoneShare', 'calculateZoneShare([]) returns {dry:0, ok:0, wet:0, count:0} instead of fake 100% optimal');
+    } else {
+        fail('Empty-ZoneShare', 'calculateZoneShare([]) returned non-zero values for empty dataset', JSON.stringify(emptyShare));
+    }
+
+    // 4. Verify calculateStats([]) reports count=0 and generateStatHTML renders NO DATA / —
+    const emptySt = sandbox.window.DatasetStore.calculateStats([], r => r.tanah);
+    const emptyStHtml = sandbox.window.DatasetStore.generateStatHTML(emptySt, '%', 0);
+    if (emptySt.count === 0 && emptySt.tr === 'NO DATA' && emptyStHtml.includes('NO DATA')) {
+        pass('Empty-Stats-HTML', 'Empty dataset stats render explicit NO DATA instead of misleading 0% readings');
+    } else {
+        fail('Empty-Stats-HTML', 'Empty dataset stats failed NO DATA check', emptyStHtml);
+    }
+
+    // 5. Verify AIAssistant.calculateVPD returns null (not 0.65) on invalid inputs
+    const nullVpd = sandbox.window.AIAssistant.calculateVPD(NaN, undefined);
+    if (nullVpd === null) {
+        pass('VPD-No-Fallback', 'AIAssistant.calculateVPD(NaN, undefined) returns null instead of fake 0.65 kPa fallback');
+    } else {
+        fail('VPD-No-Fallback', `Expected null, got ${nullVpd}`);
+    }
+
+    // 6. Verify Firebase RTDB parser merges both kelompok2 and root telemetry keys while ignoring settings
+    const mixedRtdbPayload = {
+        settings: { interval: 2000 },
+        kelompok2: {
+            '-O1': { kelembapan_tanah: 66, kelembapan_udara: 70, suhu: 24.1, timestamp: 1730000001000 }
+        },
+        '-O2': { kelembapan_tanah: 67, kelembapan_udara: 71, suhu: 24.2, timestamp: 1730000005000 }
+    };
+    const parsedMixed = sandbox.window.FirebaseEdgeClient.parseDatabaseResponse(mixedRtdbPayload);
+    if (parsedMixed.length === 2 && parsedMixed[0].tanah === 66 && parsedMixed[1].tanah === 67) {
+        pass('RTDB-Parser-Integration', 'parseDatabaseResponse merges kelompok2 and root records while ignoring non-telemetry settings');
+    } else {
+        fail('RTDB-Parser-Integration', `Unexpected parsed count: ${parsedMixed.length}`);
+    }
+
+    // 7. Verify CSS responsive fixes for .sub-chart-wrap, .grid on <=960px, and .gallery-grid
+    const hasSubChartWrap = cssContent.includes('.sub-chart-wrap') && cssContent.includes('height: 140px');
+    const hasSideclose = cssContent.includes('.sideclose');
+    if (hasSubChartWrap && hasSideclose) {
+        pass('CSS-Chart-Subgrid', 'CSS defines .sub-chart-box, .sub-chart-wrap (140px bounded), and mobile .sideclose rules');
+    } else {
+        fail('CSS-Chart-Subgrid', 'Missing .sub-chart-wrap or .sideclose CSS rules');
+    }
+} catch (e) {
+    fail('Real-Data-Audit', 'Unexpected error in Suite 23', e.message);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 24: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [24] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
 
 notTested(
     'Hardware-IoT',

@@ -40,7 +40,7 @@ flowchart TD
 
     subgraph Client_App ["Dashboard Web Profesional (12 Modul Halaman)"]
         SEC["Security Layer<br/>(XSS Allowlist, CSV Defense CWE-1236, Host Sanitize)"]
-        ROUTER["Data Demux & Store<br/>(Live / Offline-Cache / Demo Isolation)"]
+        ROUTER["Data Demux & Store<br/>(Live RTDB / Offline-Cache / Zero-Dummy)"]
         GROWTH["Leaf Growth Manager<br/>(Sinkronisasi Galeri & Metrik Kanopi)"]
         SCADA["SCADA Controller<br/>(Pump Command Setpoint vs Relay Feedback)"]
         DSS["Sistem Pakar Agronomi<br/>(Tetens VPD & Physiological GDD)"]
@@ -170,17 +170,14 @@ selada-workspace/
 │   └── dashboard.js         # Pengendali utama, router 12 halaman, SCADA histeresis, ResizeObserver chart
 ├── scripts/
 │   ├── growth_cv_pipeline.py      # Engine computer vision (ExG Otsu, morfologi, kontur, pengukuran)
-│   ├── scheduler_daemon.py        # Daemon otomasi capture 10 menit (Asia/Jakarta, recovery, timeout)
-│   ├── generate_campaign_data.py  # Generator dataset historis tervalidasi HST 1–24
-│   ├── build_redesign_html.py     # Generator markup semantik index.html
-│   └── apply_dashboard_patch.py   # Skrip integrasi reaktif dashboard
+│   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit (Asia/Jakarta, recovery, timeout)
 ├── data/
-│   ├── growth_images/             # Repositori berkas citra (orig.jpg, mask.png, overlay.jpg)
-│   ├── growth_metadata.json       # Metadata terstruktur seluruh hasil pengukuran kanopi
+│   ├── growth_images/             # Repositori berkas citra aktual (orig.jpg, mask.png, overlay.jpg)
+│   ├── growth_metadata.json       # Metadata terstruktur hasil pengukuran kanopi aktual
 │   └── scheduler_daemon.log       # Log eksekusi scheduler independen
 ├── tests/
-│   ├── run-all-tests.js     # Test runner JavaScript komprehensif (109 tes, 105 pass, 4 not-tested)
-│   └── test_cv_pipeline.py  # Unit test Python untuk engine CV dan scheduler (10/10 passed)
+│   ├── run-all-tests.js     # Test runner JavaScript komprehensif (Unit, Integration, Hardware Audit)
+│   └── test_cv_pipeline.py  # Test suite Python untuk engine CV dan scheduler (10/10 passed)
 ├── index.html               # Markup 12 modul UI, KPI grid, 3 panel utama, modal dialog
 └── README.md                # Dokumentasi arsitektur, agronomi, wiring pinout, dan pengujian
 ```
@@ -220,14 +217,14 @@ python3 -m http.server 8080
 
 ### Menjalankan Scheduler Daemon 10-Menit (Background Edge)
 ```bash
-# Cek status kampanye capture saat ini
+# Cek status kampanye capture aktual saat ini
 python3 scripts/scheduler_daemon.py --status
 
-# Eksekusi satu slot capture segera (dengan fallback simulasi bila kamera belum terhubung)
-python3 scripts/scheduler_daemon.py --run-once --simulate
+# Eksekusi satu slot capture segera ke kamera fisik ESP32-CAM (tanpa simulasi; jika offline dicatat FAILED)
+python3 scripts/scheduler_daemon.py --run-once --cam-url http://192.168.1.23/capture
 
-# Jalankan daemon berkelanjutan
-python3 scripts/scheduler_daemon.py --daemon --simulate
+# Jalankan daemon berkelanjutan (07:00–16:50 WIB, interval 10 menit)
+python3 scripts/scheduler_daemon.py --daemon --cam-url http://192.168.1.23/capture
 ```
 
 ### Menjalankan Automated Test Suite

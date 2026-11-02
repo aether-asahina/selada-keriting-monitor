@@ -50,8 +50,11 @@
             this.activeChartMetric = 'tanah';
             this.chartTimeWindowSec = 300;
             this.sensorWinSec = 60;
-            this.plantAgeHST = 24;
-            this.harvestTargetHST = 40;
+            this.plantAgeHST = 0;
+            this.harvestTargetHST = 42;
+            this.connectionState = 'connecting';
+            this.connectionMessage = 'Menghubungkan…';
+            this.connectionSource = 'none';
 
             // SCADA Pump States: Distinction between controller command setpoint and physical relay confirmation
             this.lastPumpCommand = false;
@@ -105,24 +108,34 @@
             // Subscribe to Leaf Growth Store updates
             if (window.GrowthStore) {
                 window.GrowthStore.subscribe(() => {
-                    if (this.activePage === 'ringkasan' || this.activePage === 'pertumbuhan-daun') {
-                        this.renderAllViews();
-                    }
+                    this.renderAllViews();
                 });
             }
 
-            // Responsive ResizeObserver for telemetry chart containment
+            // Responsive ResizeObserver for telemetry & leaf growth chart containment
+            const handleChartResize = () => {
+                if (this.activePage === 'ringkasan') {
+                    this.renderOverviewChart();
+                    if (window.GrowthStore) window.GrowthStore.renderMiniDashboardCharts();
+                } else if (this.activePage === 'pertumbuhan-daun') {
+                    if (window.GrowthStore) window.GrowthStore.renderGrowthCharts();
+                } else if (this.activePage === 'sensor') {
+                    this.renderSensorPage();
+                }
+            };
+
+            let resizeDebounce = null;
+            const triggerDebouncedResize = () => {
+                clearTimeout(resizeDebounce);
+                resizeDebounce = setTimeout(handleChartResize, 50);
+            };
+
             const chartWrap = $('#chartSvgWrap');
             if (chartWrap && typeof ResizeObserver !== 'undefined') {
-                let resizeDebounce = null;
-                const ro = new ResizeObserver(() => {
-                    clearTimeout(resizeDebounce);
-                    resizeDebounce = setTimeout(() => {
-                        if (this.activePage === 'ringkasan') this.renderOverviewChart();
-                    }, 50);
-                });
+                const ro = new ResizeObserver(triggerDebouncedResize);
                 ro.observe(chartWrap);
             }
+            window.addEventListener('resize', triggerDebouncedResize);
 
             // Periodic offline check with tracked timer
             this.offlineTimer = setInterval(() => this.checkDeviceOffline(), 3000);
@@ -131,7 +144,7 @@
         }
 
         calculateTetensVPD(tempC, humidityPct) {
-            if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return 0.75;
+            if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return null;
             const validT = Math.max(0, Math.min(50, tempC));
             const validRH = Math.max(5, Math.min(100, humidityPct));
             const svp = 0.61078 * Math.exp((17.27 * validT) / (validT + 237.3));
@@ -1005,8 +1018,6 @@
             const winRows = allRows.filter(r => r.t >= (now - this.sensorWinSec * 1000));
             const rows = winRows.length >= 2 ? winRows : allRows.slice(-30);
 
-            if (rows.length < 2) return;
-
             const S = window.ConfigStore.get();
             const tUnit = S.unit === 'F' ? '°F' : '°C';
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
@@ -1019,12 +1030,51 @@
             if ($('#st-suhu')) $('#st-suhu').innerHTML = window.DatasetStore.generateStatHTML(stSuhu, tUnit, 1);
             if ($('#st-udara')) $('#st-udara').innerHTML = window.DatasetStore.generateStatHTML(stUdara, '%', 0);
 
-            const last = rows[rows.length - 1];
-            if ($('#ro-tanah')) $('#ro-tanah').innerHTML = `<b>${Math.round(last.tanah)}%</b> · Kelembapan Tanah · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
-            if ($('#ro-suhu')) $('#ro-suhu').innerHTML = `<b>${convTemp(last.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b> · Suhu Mikroklimat · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
-            if ($('#ro-udara')) $('#ro-udara').innerHTML = `<b>${Math.round(last.udara)}%</b> · Kelembapan Udara · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatTime(last.t))}</span>`;
+            if (rows.length === 0) {
+                if ($('#ro-tanah')) $('#ro-tanah').innerHTML = `<b>NO DATA</b> · Kelembapan Tanah · <span class="mono">OFFLINE</span>`;
+                if ($('#ro-suhu')) $('#ro-suhu').innerHTML = `<b>NO DATA</b> · Suhu Mikroklimat · <span class="mono">OFFLINE</span>`;
+                if ($('#ro-udara')) $('#ro-udara').innerHTML = `<b>NO DATA</b> · Kelembapan Udara · <span class="mono">OFFLINE</span>`;
 
-            this.renderDetailedSVGChart('ch-tanah', rows, r => r.tanah, '%', [S.dry, S.wet], 40, 100, '#10b981');
+                ['ch-tanah', 'ch-suhu', 'ch-udara', 'ch-scatter'].forEach(id => {
+                    const host = $(`#${id}`);
+                    if (host) {
+                        host.innerHTML = `<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;text-align:center;padding:16px;">NO DATA · Menunggu Telemetri Sensor Fisik</div>`;
+                    }
+                });
+
+                const zoneShareEl = $('#zoneShare');
+                if (zoneShareEl) {
+                    zoneShareEl.innerHTML = `
+                        <div class="zones-bar"></div>
+                        <div class="zones-legend">
+                            <span>Kering: <b>— (NO DATA)</b></span>
+                            <span>Optimal (${S.dry}–${S.wet}%): <b>— (NO DATA)</b></span>
+                            <span>Basah: <b>— (NO DATA)</b></span>
+                        </div>
+                    `;
+                }
+                if ($('#corr')) $('#corr').textContent = 'Korelasi r = — (NO DATA · Menunggu Sensor)';
+                return;
+            }
+
+            const last = rows[rows.length - 1];
+            const srcTag = last.source === 'cache' ? 'CACHE' : 'RTDB';
+            if ($('#ro-tanah')) $('#ro-tanah').innerHTML = `<b>${Math.round(last.tanah)}%</b> · Kelembapan Tanah · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatDateTime(last.t))} (${srcTag})</span>`;
+            if ($('#ro-suhu')) $('#ro-suhu').innerHTML = `<b>${convTemp(last.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b> · Suhu Mikroklimat · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatDateTime(last.t))} (${srcTag})</span>`;
+            if ($('#ro-udara')) $('#ro-udara').innerHTML = `<b>${Math.round(last.udara)}%</b> · Kelembapan Udara · <span class="mono">${Sec.escapeHTML(window.DatasetStore.formatDateTime(last.t))} (${srcTag})</span>`;
+
+            if (rows.length < 2) {
+                ['ch-tanah', 'ch-suhu', 'ch-udara', 'ch-scatter'].forEach(id => {
+                    const host = $(`#${id}`);
+                    if (host) {
+                        host.innerHTML = `<div style="height:220px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;text-align:center;padding:16px;">Minimal 2 titik telemetri diperlukan untuk merender kurva tren</div>`;
+                    }
+                });
+                if ($('#corr')) $('#corr').textContent = 'Korelasi r = — (Min. 2 Sampel)';
+                return;
+            }
+
+            this.renderDetailedSVGChart('ch-tanah', rows, r => r.tanah, '%', [S.dry, S.wet], 0, 100, '#10b981');
             this.renderDetailedSVGChart('ch-suhu', rows, r => convTemp(r.suhu), tUnit, [convTemp(15), convTemp(24)], null, null, '#f59e0b');
             this.renderDetailedSVGChart('ch-udara', rows, r => r.udara, '%', [60, 80], 40, 100, '#3b82f6');
 
@@ -1052,11 +1102,11 @@
             const host = $(`#${elementId}`);
             if (!host) return;
 
-            const w = Math.max(280, host.clientWidth || 600);
+            const w = Math.max(240, host.clientWidth || 600);
             const h = 220;
             const pad = { t: 16, r: 16, b: 24, l: 44 };
-            const iw = w - pad.l - pad.r;
-            const ih = h - pad.t - pad.b;
+            const iw = Math.max(20, w - pad.l - pad.r);
+            const ih = Math.max(20, h - pad.t - pad.b);
 
             const vals = rows.map(getter).filter(v => Number.isFinite(v));
             if (vals.length < 2) return;
@@ -1097,7 +1147,7 @@
             const lastPt = pts[pts.length - 1];
 
             host.innerHTML = `
-                <svg viewBox="0 0 ${w} ${h}">
+                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:hidden;">
                     ${gridHtml}
                     ${bandHtml}
                     <path d="${pathD}" fill="none" stroke="${Sec.escapeHTML(strokeColor)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -1110,11 +1160,11 @@
             const host = $(`#${containerId}`);
             if (!host) return;
 
-            const w = Math.max(260, host.clientWidth || 340);
+            const w = Math.max(240, host.clientWidth || 340);
             const h = 220;
             const pad = { t: 16, r: 16, b: 28, l: 40 };
-            const iw = w - pad.l - pad.r;
-            const ih = h - pad.t - pad.b;
+            const iw = Math.max(20, w - pad.l - pad.r);
+            const ih = Math.max(20, h - pad.t - pad.b);
 
             const S = window.ConfigStore.get();
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
@@ -1148,7 +1198,7 @@
 
             const corrEl = $('#corr');
             if (corrEl) {
-                corrEl.textContent = `Korelasi r = ${r.toFixed(2)} (${r < -0.3 ? 'Suhu naik, kelembapan turun' : 'Fluktuasi moderat'})`;
+                corrEl.textContent = `Korelasi r = ${r.toFixed(2)} (${r < -0.3 ? 'Suhu naik, kelembapan turun' : 'Fluktuasi moderat'} · ${n} sampel)`;
             }
 
             const dotsHtml = xs.map((xVal, i) => `
@@ -1156,7 +1206,7 @@
             `).join('');
 
             host.innerHTML = `
-                <svg viewBox="0 0 ${w} ${h}">
+                <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:hidden;">
                     <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${h - pad.b}" stroke="rgba(255,255,255,0.1)" />
                     <line x1="${pad.l}" y1="${h - pad.b}" x2="${w - pad.r}" y2="${h - pad.b}" stroke="rgba(255,255,255,0.1)" />
                     <text x="${pad.l}" y="${pad.t - 4}" fill="var(--text-muted)" font-size="10">Udara (%)</text>
@@ -1169,14 +1219,20 @@
         // ================= RENDERING ORCHESTRATION =================
         renderAllViews() {
             const latest = window.DatasetStore.getLatest();
+            this.renderPlantAgeBanner();
             this.updateHeaderMeta(latest);
+            this.updateMetricsCards(latest);
+            this.updatePredictionCard(latest);
+            this.updateAIRecommendations(latest);
+            this.renderDashboardAlerts(latest);
+            this.updateAgronomicAnalysisPage(latest);
+            this.updateGreenhousePage(latest);
+            this.updateFooterStats(latest);
 
             if (this.activePage === 'ringkasan') {
-                this.updateMetricsCards(latest);
-                this.renderPlantAgeBanner();
-                this.updatePredictionCard(latest);
                 this.renderOverviewChart();
                 window.DatasetStore.renderSnippetTable('datasetTableBody', 8);
+                if (window.GrowthStore) window.GrowthStore.renderMiniDashboardCharts();
             } else if (this.activePage === 'sensor') {
                 this.renderSensorPage();
             } else if (this.activePage === 'riwayat') {
@@ -1186,14 +1242,58 @@
             }
         }
 
+        formatRelativeAge(ts) {
+            if (!Number.isFinite(ts)) return 'OFFLINE';
+            const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+            if (diffSec < 60) return `${diffSec} dtk lalu`;
+            if (diffSec < 3600) return `${Math.floor(diffSec / 60)} mnt lalu`;
+            if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} jam lalu`;
+            return `${Math.floor(diffSec / 86400)} hari lalu`;
+        }
+
         updateHeaderMeta(latest) {
             const freshEl = $('#fresh');
             if (freshEl) {
-                freshEl.textContent = latest ? `${Math.max(0, Math.round((Date.now() - latest.t) / 1000))} detik lalu` : '—';
+                if (latest) {
+                    const rel = this.formatRelativeAge(latest.t);
+                    freshEl.textContent = `${rel} (${window.DatasetStore.formatDateTime(latest.t)})`;
+                } else {
+                    freshEl.textContent = 'OFFLINE / NO DATA';
+                }
+            }
+
+            const dateRangeEl = $('#headerDateRange');
+            if (dateRangeEl) {
+                const all = window.DatasetStore.getAll();
+                if (all.length > 0) {
+                    const first = all[0];
+                    const last = all[all.length - 1];
+                    dateRangeEl.textContent = `Data: ${window.DatasetStore.formatDateTime(first.t)} – ${window.DatasetStore.formatTime(last.t, false)} (${all.length} Paket)`;
+                } else {
+                    dateRangeEl.textContent = 'Data: NO DATA (Menunggu Telemetri)';
+                }
+            }
+
+            const camBadge = $('#headerCamStatusBadge');
+            if (camBadge) {
+                const isCamOn = this.cam && this.cam.run;
+                camBadge.textContent = isCamOn ? 'Kamera: ONLINE' : 'Kamera: OFFLINE';
+                camBadge.className = isCamOn ? 'badge-tag emerald tabular-nums' : 'badge-tag amber tabular-nums';
+            }
+
+            const alertHeader = $('#headerAlertsCount');
+            if (alertHeader) {
+                const unread = this.alerts.filter(a => !a.read).length;
+                alertHeader.textContent = `${unread} Peringatan`;
+                alertHeader.className = unread > 0 ? 'badge-tag rose tabular-nums' : 'badge-tag slate tabular-nums';
             }
         }
 
         updateConnectionBadge(state, message, source = 'live') {
+            this.connectionState = state;
+            this.connectionMessage = message;
+            this.connectionSource = source;
+
             const dot = $('#sysStatusDot');
             const text = $('#sysStatusText');
             const sub = $('#sysStatusSub');
@@ -1201,19 +1301,28 @@
             const textHeader = $('#sysStatusTextHeader');
 
             let sourceLabel = 'Telemetri Live';
+            let headerLabel = 'Live (Aktif)';
             let color = 'var(--accent-emerald)';
 
-            if (state === 'empty') {
+            if (state === 'stale') {
+                sourceLabel = 'RTDB Terhubung · ESP32 Offline';
+                headerLabel = 'Historis (ESP32 Offline)';
+                color = 'var(--accent-amber)';
+            } else if (state === 'empty') {
                 sourceLabel = 'RTDB Kosong (No Data)';
+                headerLabel = 'No Data';
                 color = 'var(--accent-amber)';
             } else if (source === 'cache' || state === 'offline') {
                 sourceLabel = 'Offline Cache';
+                headerLabel = 'Cache Offline';
                 color = 'var(--accent-amber)';
             } else if (state === 'disconnected') {
                 sourceLabel = 'OFFLINE / DISCONNECTED';
+                headerLabel = 'Disconnected';
                 color = 'var(--accent-rose)';
             } else if (state === 'connecting') {
                 sourceLabel = 'Menghubungkan…';
+                headerLabel = 'Menghubungkan…';
                 color = 'var(--accent-blue)';
             }
 
@@ -1231,8 +1340,11 @@
                 dotHeader.style.backgroundColor = color;
             }
             if (textHeader) {
-                textHeader.textContent = state === 'connected' ? 'Live' : (state === 'empty' ? 'Kosong' : 'Offline');
+                textHeader.textContent = headerLabel;
             }
+
+            this.updateFooterStats(window.DatasetStore ? window.DatasetStore.getLatest() : null);
+            this.updateGreenhousePage(window.DatasetStore ? window.DatasetStore.getLatest() : null);
         }
 
         renderPlantAgeBanner() {
@@ -1241,13 +1353,295 @@
             const progressPct = $('#plantProgressPct');
             const daysLeft = $('#plantDaysLeft');
 
+            const gStats = window.GrowthStore ? window.GrowthStore.getCampaignStats() : null;
+            this.plantAgeHST = (gStats && gStats.currentHST > 0) ? gStats.currentHST : 0;
+
+            if (this.plantAgeHST <= 0) {
+                if (ageNumber) ageNumber.textContent = '—';
+                if (progressFill) progressFill.style.width = '0%';
+                if (progressPct) progressPct.textContent = `0% Target Kampanye (0 / ${this.harvestTargetHST} HST)`;
+                if (daysLeft) daysLeft.textContent = 'Belum Ada Citra Kampanye Tervalidasi';
+                return;
+            }
+
             const pct = Math.min(100, Math.round((this.plantAgeHST / this.harvestTargetHST) * 100));
             const remaining = Math.max(0, this.harvestTargetHST - this.plantAgeHST);
 
             if (ageNumber) ageNumber.textContent = this.plantAgeHST;
             if (progressFill) progressFill.style.width = `${pct}%`;
-            if (progressPct) progressPct.textContent = `${pct}% Target Panen (${this.harvestTargetHST} HST)`;
+            if (progressPct) progressPct.textContent = `${pct}% Target Panen (${this.plantAgeHST} / ${this.harvestTargetHST} HST)`;
             if (daysLeft) daysLeft.textContent = `${remaining} Hari Lagi Menuju Panen`;
+        }
+
+        updateAIRecommendations(record) {
+            const list = $('#aiRecomList');
+            if (!list) return;
+
+            if (!record || !Number.isFinite(record.tanah) || !Number.isFinite(record.suhu) || !Number.isFinite(record.udara)) {
+                list.innerHTML = `
+                    <div class="recom-item warn" style="grid-column: 1 / -1;">
+                        <div class="recom-title">STATUS: NO DATA / OFFLINE</div>
+                        <div class="recom-desc">Belum ada telemetri sensor fisik yang diterima dari RTDB atau perangkat ESP32 sedang offline. Sistem tidak membuat rekomendasi berbasis angka asumsi.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const S = window.ConfigStore.get();
+            const vpd = this.calculateTetensVPD(record.suhu, record.udara);
+            const tsText = window.DatasetStore.formatDateTime(record.t);
+            const srcText = record.source === 'cache' ? 'CACHE LOKAL' : 'FIREBASE RTDB';
+
+            const soilClass = record.tanah < S.dry ? 'alert' : (record.tanah > S.wet ? 'warn' : 'ok');
+            const soilTitle = record.tanah < S.dry
+                ? `Irigasi Diperlukan (Tanah ${Math.round(record.tanah)}% < ${S.dry}%)`
+                : (record.tanah > S.wet ? `Media Jenuh Air (${Math.round(record.tanah)}% > ${S.wet}%)` : `Kelembapan Media Optimal (${Math.round(record.tanah)}%)`);
+            const soilDesc = record.tanah < S.dry
+                ? `Sensor HW-390 melaporkan kelembapan ${Math.round(record.tanah)}% pada ${tsText} (${srcText}). Perintah pompa ON aktif hingga mencapai ${S.wet}%.`
+                : `Sensor HW-390 melaporkan kelembapan ${Math.round(record.tanah)}% pada ${tsText} (${srcText}). Rentang target histeresis: ${S.dry}%–${S.wet}%.`;
+
+            const vpdClass = (vpd !== null && (vpd < 0.4 || vpd > 1.2)) ? 'warn' : 'ok';
+            const vpdTitle = vpd !== null
+                ? `Defisit Tekanan Uap (VPD): ${vpd.toFixed(2)} kPa`
+                : 'VPD: NO DATA';
+            const vpdDesc = vpd !== null
+                ? `Dihitung dari T=${record.suhu.toFixed(1)}°C dan RH=${Math.round(record.udara)}% (${tsText}). Target transpirasi optimal selada keriting: 0.40–0.85 kPa.`
+                : 'Menunggu pembacaan suhu dan kelembapan udara valid dari DHT22.';
+
+            const tempClass = record.suhu > 28 ? 'alert' : (record.suhu > 24 ? 'warn' : 'ok');
+            const tempTitle = record.suhu > 28
+                ? `Peringatan Suhu Tinggi (${record.suhu.toFixed(1)}°C)`
+                : (record.suhu > 24 ? `Suhu Di Atas Ideal (${record.suhu.toFixed(1)}°C)` : `Suhu Mikroklimat Optimal (${record.suhu.toFixed(1)}°C)`);
+            const tempDesc = `Pembacaan aktual DHT22: ${record.suhu.toFixed(1)}°C (Batas bolting > 28°C, rentang ideal 15–24°C). Sumber: ${srcText}.`;
+
+            const gStats = window.GrowthStore ? window.GrowthStore.getCampaignStats() : { validCount: 0, targetValid: 1600 };
+            const cvClass = gStats.validCount > 0 ? 'ok' : 'warn';
+            const cvTitle = gStats.validCount > 0
+                ? `Morfologi CV Aktual: ${gStats.validCount} Citra Valid`
+                : 'Morfologi CV: Menunggu Capture ESP32-CAM (0 Citra)';
+            const cvDesc = gStats.latestRecord
+                ? `Lebar daun terakhir: ${gStats.latestRecord.leaf_width_px} px, luas siluet: ${gStats.latestRecord.leaf_area_px} px² (${gStats.latestRecord.time_wib}).`
+                : 'Belum ada citra daun tervalidasi pada data/growth_metadata.json. Pastikan ESP32-CAM online dan scheduler aktif.';
+
+            list.innerHTML = `
+                <div class="recom-item ${soilClass}">
+                    <div class="recom-title">${Sec.escapeHTML(soilTitle)}</div>
+                    <div class="recom-desc">${Sec.escapeHTML(soilDesc)}</div>
+                </div>
+                <div class="recom-item ${vpdClass}">
+                    <div class="recom-title">${Sec.escapeHTML(vpdTitle)}</div>
+                    <div class="recom-desc">${Sec.escapeHTML(vpdDesc)}</div>
+                </div>
+                <div class="recom-item ${tempClass}">
+                    <div class="recom-title">${Sec.escapeHTML(tempTitle)}</div>
+                    <div class="recom-desc">${Sec.escapeHTML(tempDesc)}</div>
+                </div>
+                <div class="recom-item ${cvClass}">
+                    <div class="recom-title">${Sec.escapeHTML(cvTitle)}</div>
+                    <div class="recom-desc">${Sec.escapeHTML(cvDesc)}</div>
+                </div>
+            `;
+        }
+
+        renderDashboardAlerts(record) {
+            const container = $('#dashAlertsList');
+            if (!container) return;
+
+            const items = [];
+            const S = window.ConfigStore.get();
+
+            if (!record) {
+                items.push({
+                    cls: 'warn',
+                    title: 'NO DATA · Menunggu Telemetri',
+                    desc: 'Belum ada paket data sensor fisik yang diterima dari RTDB maupun cache lokal.'
+                });
+            } else {
+                const ageSec = Math.max(0, Math.round((Date.now() - record.t) / 1000));
+                if (ageSec > (S.rules.off ? S.rules.off.v : 15)) {
+                    items.push({
+                        cls: 'warn',
+                        title: `Transmisi Sensor Stale (${this.formatRelativeAge(record.t)})`,
+                        desc: `Data terakhir di RTDB tercatat pada ${window.DatasetStore.formatDateTime(record.t)}. Perangkat fisik ESP32 saat ini tidak mengirim paket baru.`
+                    });
+                }
+                if (record.tanah < S.dry) {
+                    items.push({
+                        cls: 'alert',
+                        title: `Media Tanam Kering (${Math.round(record.tanah)}%)`,
+                        desc: `Di bawah ambang histeresis ${S.dry}% pada pengukuran ${window.DatasetStore.formatDateTime(record.t)}.`
+                    });
+                }
+            }
+
+            if (!(this.cam && this.cam.run)) {
+                items.push({
+                    cls: 'info',
+                    title: 'Kamera ESP32-CAM Offline',
+                    desc: 'Stream optik belum terhubung. Pengukuran CV menampilkan status menunggu perangkat.'
+                });
+            }
+
+            this.alerts.slice(0, 3).forEach(a => {
+                items.push({
+                    cls: a.sev,
+                    title: `Peringatan [${a.rule.toUpperCase()}] · ${window.DatasetStore.formatTime(a.t)}`,
+                    desc: a.msg
+                });
+            });
+
+            container.innerHTML = items.slice(0, 4).map(it => `
+                <div class="alert-box ${Sec.escapeHTML(it.cls)}">
+                    <div class="alert-box-content">
+                        <h4>${Sec.escapeHTML(it.title)}</h4>
+                        <p>${Sec.escapeHTML(it.desc)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        updateAgronomicAnalysisPage(record) {
+            const vpdEl = $('#dssVpdValue');
+            const vpdMeta = $('#dssVpdMeta');
+            const vpdAlert = $('#dssVpdAlert');
+            const gddEl = $('#dssGddValue');
+            const gddMeta = $('#dssGddMeta');
+            const gddAlert = $('#dssGddAlert');
+
+            const allRecords = window.DatasetStore ? window.DatasetStore.getAll().filter(r => Number.isFinite(r.suhu)) : [];
+
+            if (!record || !Number.isFinite(record.suhu) || !Number.isFinite(record.udara)) {
+                if (vpdEl) vpdEl.textContent = 'NO DATA';
+                if (vpdMeta) vpdMeta.textContent = 'Sumber: OFFLINE · Menunggu sensor DHT22';
+                if (vpdAlert) {
+                    vpdAlert.className = 'alert-box warn';
+                    vpdAlert.innerHTML = `<div class="alert-box-content"><h4>Status VPD: Belum Tersedia</h4><p>Perhitungan Tetens VPD memerlukan telemetri suhu dan kelembapan udara aktual.</p></div>`;
+                }
+                if (gddEl) gddEl.textContent = 'NO DATA';
+                if (gddMeta) gddMeta.textContent = 'Sumber: OFFLINE · 0 sampel termal';
+                if (gddAlert) {
+                    gddAlert.className = 'alert-box warn';
+                    gddAlert.innerHTML = `<div class="alert-box-content"><h4>Status GDD: Belum Tersedia</h4><p>Akumulasi termal GDD memerlukan riwayat pengukuran suhu fisik.</p></div>`;
+                }
+                return;
+            }
+
+            const vpd = this.calculateTetensVPD(record.suhu, record.udara);
+            const tsStr = window.DatasetStore.formatDateTime(record.t);
+            const srcStr = record.source === 'cache' ? 'CACHE' : 'RTDB';
+
+            if (vpdEl) vpdEl.textContent = vpd !== null ? `${vpd.toFixed(2)} kPa` : 'NO DATA';
+            if (vpdMeta) vpdMeta.textContent = `Sumber: ${srcStr} · T=${record.suhu.toFixed(1)}°C, RH=${Math.round(record.udara)}% · ${tsStr}`;
+            if (vpdAlert && vpd !== null) {
+                const isOpt = vpd >= 0.4 && vpd <= 0.85;
+                vpdAlert.className = `alert-box ${isOpt ? 'ok' : 'warn'}`;
+                vpdAlert.innerHTML = `
+                    <div class="alert-box-content">
+                        <h4>${isOpt ? 'Zona Transpirasi Optimal (0.40 – 0.85 kPa)' : 'Di Luar Rentang Transpirasi Ideal'}</h4>
+                        <p>VPD aktual <b>${vpd.toFixed(2)} kPa</b> dihitung langsung dari paket telemetri (${Sec.escapeHTML(tsStr)}).</p>
+                    </div>
+                `;
+            }
+
+            // Compute genuine GDD from recorded telemetry intervals (Base Temp = 4.0°C)
+            const baseTemp = 4.0;
+            const meanTemp = allRecords.reduce((acc, r) => acc + r.suhu, 0) / allRecords.length;
+            const dailyGddRate = Math.max(0, meanTemp - baseTemp);
+            const gStats = window.GrowthStore ? window.GrowthStore.getCampaignStats() : { currentHST: 0 };
+
+            if (gStats.currentHST > 0) {
+                const cumGdd = Math.round(dailyGddRate * gStats.currentHST * 10) / 10;
+                if (gddEl) gddEl.textContent = `${cumGdd} °C·hari`;
+                if (gddMeta) gddMeta.textContent = `LaJu Termal: ${dailyGddRate.toFixed(1)} °C·hari/HST · HST ${gStats.currentHST} (${allRecords.length} sampel)`;
+            } else {
+                if (gddEl) gddEl.textContent = `${dailyGddRate.toFixed(1)} °C/hari`;
+                if (gddMeta) gddMeta.textContent = `Laju Termal Aktual (T_mean=${meanTemp.toFixed(1)}°C dari ${allRecords.length} paket RTDB · Kampanye CV: 0 HST)`;
+            }
+
+            if (gddAlert) {
+                gddAlert.className = 'alert-box info';
+                gddAlert.innerHTML = `
+                    <div class="alert-box-content">
+                        <h4>Kalkulasi Termal Aktual (${allRecords.length} Sampel Telemetri)</h4>
+                        <p>Rata-rata suhu terekam <b>${meanTemp.toFixed(2)}°C</b> menghasilkan laju termal <b>${dailyGddRate.toFixed(2)} GDD/hari</b> (Tbase 4.0°C). Akumulasi total HST menunggu dimulainya kampanye citra.</p>
+                    </div>
+                `;
+            }
+        }
+
+        updateGreenhousePage(record) {
+            const elTele = $('#ghNodeTelemetry');
+            const elCam = $('#ghNodeCamera');
+            const elExt = $('#ghExternalModules');
+            const elCamp = $('#ghCampaignSpec');
+
+            const allCount = window.DatasetStore ? window.DatasetStore.getAll().length : 0;
+            if (elTele) {
+                if (this.connectionState === 'connected') {
+                    elTele.textContent = `ONLINE (${allCount} Paket)`;
+                } else if (this.connectionState === 'stale') {
+                    elTele.textContent = `HISTORIS (${allCount} Paket · ESP32 Offline)`;
+                } else {
+                    elTele.textContent = `OFFLINE (${allCount} Paket)`;
+                }
+            }
+            if (elCam) {
+                const S = window.ConfigStore ? window.ConfigStore.get() : {};
+                const isCamOn = this.cam && this.cam.run;
+                elCam.textContent = isCamOn ? `ONLINE (${S.camIp})` : (S.camIp ? `OFFLINE (${S.camIp})` : 'DISCONNECTED (IP Belum Diatur)');
+            }
+            if (elExt) {
+                elExt.textContent = 'NOT AVAILABLE (EC/pH/CO2 Belum Terpasang)';
+            }
+            if (elCamp && window.GrowthStore) {
+                const st = window.GrowthStore.getCampaignStats();
+                elCamp.textContent = `${st.validCount} / ${st.targetValid} Citra Valid (42 HST)`;
+            }
+        }
+
+        updateFooterStats(record) {
+            const elSensors = $('#statActiveSensors');
+            const elDur = $('#statMonitoringDuration');
+            const elSys = $('#statSystemStatus');
+
+            const all = window.DatasetStore ? window.DatasetStore.getAll() : [];
+            if (elSensors) {
+                if (this.connectionState === 'connected' && record) {
+                    elSensors.textContent = '2 Modul Aktif (DHT22, HW-390)';
+                    elSensors.style.color = 'var(--accent-emerald)';
+                } else if (all.length > 0) {
+                    elSensors.textContent = 'Standby / Offline (2 Modul Terdaftar)';
+                    elSensors.style.color = 'var(--accent-amber)';
+                } else {
+                    elSensors.textContent = 'OFFLINE (0 Transmisi)';
+                    elSensors.style.color = 'var(--accent-rose)';
+                }
+            }
+
+            if (elDur) {
+                const gStats = window.GrowthStore ? window.GrowthStore.getCampaignStats() : { currentHST: 0, validCount: 0 };
+                if (gStats.currentHST > 0) {
+                    elDur.textContent = `HST ${gStats.currentHST} / 42 Hari (${gStats.validCount} Citra)`;
+                } else if (all.length >= 2) {
+                    const spanSec = Math.max(1, Math.round((all[all.length - 1].t - all[0].t) / 1000));
+                    elDur.textContent = `${all.length} Paket RTDB (Rentang ${spanSec} dtk)`;
+                } else {
+                    elDur.textContent = '0 Hari (Menunggu Kampanye)';
+                }
+            }
+
+            if (elSys) {
+                if (this.connectionState === 'connected') {
+                    elSys.textContent = 'RTDB Live · Tervalidasi';
+                    elSys.style.color = 'var(--accent-emerald)';
+                } else if (this.connectionState === 'stale') {
+                    elSys.textContent = 'RTDB Terhubung · ESP32 Offline';
+                    elSys.style.color = 'var(--accent-amber)';
+                } else {
+                    elSys.textContent = 'OFFLINE / DISCONNECTED';
+                    elSys.style.color = 'var(--accent-rose)';
+                }
+            }
         }
 
         updateMetricsCards(record) {
@@ -1531,15 +1925,15 @@
             const currentSoil = latestRecord.tanah;
 
             // Daily thermal rate based on current microclimate: GDD_day = max(0, T_mean - 4.0)
-            const dailyGDD = Math.max(0, currentTemp - baseTemp);
+            const dailyGDD = Math.max(0, Number((currentTemp - baseTemp).toFixed(1)));
 
-            // Cumulative thermal heat units estimate up to current HST
+            // Cumulative thermal heat units up to current actual HST (0 if campaign has not started)
             const estimatedCurrentGDD = Math.min(targetGDD, Math.round(this.plantAgeHST * dailyGDD));
-            const baseMaturityPct = Math.min(98, Math.round((estimatedCurrentGDD / targetGDD) * 100));
+            const tsLabel = window.DatasetStore ? window.DatasetStore.formatDateTime(latestRecord.t) : '—';
 
             const forecastDays = [1, 2, 3, 4].map(offset => {
-                const forecastDay = this.plantAgeHST + offset;
-                const projectedGDD = Math.min(targetGDD, estimatedCurrentGDD + Math.round(offset * dailyGDD));
+                const forecastDay = this.plantAgeHST > 0 ? `${this.plantAgeHST + offset} HST` : `Proyeksi +${offset} Hari`;
+                const projectedGDD = Math.min(targetGDD, Math.round((estimatedCurrentGDD + (offset * dailyGDD)) * 10) / 10);
                 let dayMaturity = Math.min(100, Math.round((projectedGDD / targetGDD) * 100));
 
                 // Water stress penalty on vegetative expansion
@@ -1547,19 +1941,19 @@
                     dayMaturity = Math.max(0, dayMaturity - 1);
                 }
 
-                let statusText = 'Masa Pertumbuhan Vegetatif';
+                let statusText = 'Kalkulasi Termal';
                 let pillClass = 'veg';
-                if (dayMaturity >= 90) { statusText = 'Siap Panen Optimal'; pillClass = 'ready'; }
-                else if (dayMaturity >= 75) { statusText = 'Menjelang Panen'; pillClass = 'near'; }
+                if (dayMaturity >= 90) { statusText = 'Target GDD Tercapai'; pillClass = 'ready'; }
+                else if (dayMaturity >= 75) { statusText = 'Fase Akhir'; pillClass = 'near'; }
 
                 return {
                     dayOffset: offset,
-                    dayHST: forecastDay,
+                    dayLabel: forecastDay,
                     projectedGDD: projectedGDD,
                     maturityPct: dayMaturity,
                     statusText: statusText,
                     pillClass: pillClass,
-                    estimatedWeightGram: Math.round(110 + (dayMaturity / 100) * 120)
+                    dailyRate: dailyGDD
                 };
             });
 
@@ -1567,16 +1961,16 @@
             container.innerHTML = forecastDays.map(f => `
                 <div class="forecast-item">
                     <div class="forecast-day-header">
-                        <span>Hari ke+${f.dayOffset} (${f.dayHST} HST)</span>
+                        <span>Hari +${f.dayOffset} (${Sec.escapeHTML(f.dayLabel)})</span>
                         <span class="forecast-state-pill ${Sec.escapeHTML(f.pillClass)}">${Sec.escapeHTML(f.statusText)}</span>
                     </div>
                     <div class="forecast-maturity">
-                        <span class="forecast-pct tabular-nums">${f.maturityPct}%</span>
-                        <span style="font-size: 11px; color: var(--text-muted);">(GDD: ${f.projectedGDD}/${targetGDD})</span>
+                        <span class="forecast-pct tabular-nums">+${(f.dayOffset * f.dailyRate).toFixed(1)}</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">°C·hari (Total: ${f.projectedGDD}/${targetGDD})</span>
                     </div>
                     <div style="font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between;">
-                        <span>Proyeksi Biomassa:</span>
-                        <b class="tabular-nums" style="color: var(--text-primary);">${f.estimatedWeightGram}g / ph</b>
+                        <span>Basis Suhu (${currentTemp.toFixed(1)}°C):</span>
+                        <b class="tabular-nums" style="color: var(--text-primary);">${Sec.escapeHTML(tsLabel.split(' ')[0] || '')}</b>
                     </div>
                 </div>
             `).join('');

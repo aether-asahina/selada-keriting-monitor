@@ -32,7 +32,7 @@
      * VPD = SVP - AVP
      */
     function calculateVPD(tempC, humidityPct) {
-        if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return 0.65;
+        if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return null;
         const validT = Math.max(0, Math.min(50, tempC));
         const validRH = Math.max(5, Math.min(100, humidityPct));
         const svp = 0.61078 * Math.exp((17.27 * validT) / (validT + 237.3));
@@ -44,6 +44,10 @@
         constructor() {
             this.chatHistory = [];
             this.initWelcomeMessage();
+        }
+
+        calculateVPD(tempC, humidityPct) {
+            return calculateVPD(tempC, humidityPct);
         }
 
         initWelcomeMessage() {
@@ -164,15 +168,15 @@
             // 1. Analisis Kondisi Sensor Real-time
             if (q.includes('analisis') || q.includes('kondisi') || q.includes('realtime') || q.includes('sekarang') || q.includes('sensor')) {
                 if (!currentRecord || !Number.isFinite(currentRecord.tanah)) {
-                    return `Data telemetri sensor saat ini belum tersedia. Pastikan perangkat ESP32 tersambung ke WiFi dan Firebase RTDB.`;
+                    return `Data telemetri sensor saat ini belum tersedia (Status: OFFLINE / NO DATA). Pastikan perangkat ESP32 tersambung ke WiFi dan Firebase RTDB.`;
                 }
-                const sourceBadge = currentRecord.source === 'live' ? '[TELEMETRI LIVE]' : (currentRecord.source === 'cache' ? '[OFFLINE CACHE]' : '[DATA SIMULASI]');
+                const sourceBadge = currentRecord.source === 'live' ? '[TELEMETRI LIVE · TERVALIDASI]' : (currentRecord.source === 'cache' ? '[OFFLINE CACHE · TERVALIDASI]' : '[OFFLINE / DISCONNECTED]');
                 return `<b>Laporan Diagnosa Fisiologis Selada Keriting:</b><br>` +
                     `<i>Status Sumber Data: ${Sec.escapeHTML(sourceBadge)}</i><br>` +
                     `• <b>Kelembapan Tanah:</b> ${diag.soil.val}% (${diag.soil.status})<br>` +
                     `• <b>Kelembapan Udara:</b> ${diag.air.val}% (${diag.air.status})<br>` +
                     `• <b>Suhu Mikroklimat:</b> ${diag.temp.val}°C (${diag.temp.status})<br>` +
-                    `• <b>Defisit Tekanan Uap (VPD):</b> ${diag.vpd.val} kPa (${diag.vpd.status})<br>` +
+                    `• <b>Defisit Tekanan Uap (VPD):</b> ${diag.vpd.val !== null ? diag.vpd.val + ' kPa' : 'NO DATA'} (${diag.vpd.status})<br>` +
                     `• <b>Logika Pompa:</b> ${diag.pump}<br><br>` +
                     `<b>Evaluasi & Rekomendasi:</b><br>` +
                     diag.recommendations.map(r => `• ${Sec.escapeHTML(r)}`).join('<br>');

@@ -84,7 +84,7 @@
         }
 
         calculateZoneShare(rows) {
-            if (!rows || rows.length === 0) return { dry: 0, ok: 100, wet: 0 };
+            if (!rows || rows.length === 0) return { dry: 0, ok: 0, wet: 0, count: 0 };
             const counts = { dry: 0, ok: 0, wet: 0 };
             let validCount = 0;
 
@@ -96,24 +96,25 @@
                 }
             }
 
-            if (validCount === 0) return { dry: 0, ok: 100, wet: 0 };
+            if (validCount === 0) return { dry: 0, ok: 0, wet: 0, count: 0 };
             return {
                 dry: Math.round((counts.dry / validCount) * 100),
                 ok: Math.round((counts.ok / validCount) * 100),
-                wet: Math.round((counts.wet / validCount) * 100)
+                wet: Math.round((counts.wet / validCount) * 100),
+                count: validCount
             };
         }
 
         // NaN-resilient statistical analysis
         calculateStats(rows, getter, threshold = 0.5) {
             if (!rows || rows.length === 0) {
-                return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'Stabil' };
+                return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'NO DATA', count: 0 };
             }
 
             // Filter out non-finite values to prevent NaN propagation
             const vals = rows.map(getter).filter(v => Number.isFinite(v));
             if (vals.length === 0) {
-                return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'Stabil' };
+                return { cur: 0, avg: 0, min: 0, max: 0, d: 0, tr: 'NO DATA', count: 0 };
             }
 
             const n = vals.length;
@@ -133,12 +134,14 @@
                 tr = d > 0 ? 'Naik' : 'Turun';
             }
 
-            return { cur, avg, min, max, d, tr };
+            return { cur, avg, min, max, d, tr, count: n };
         }
 
         generateStatHTML(st, unit, dec = 0) {
-            const fmt = (v) => Number.isFinite(v) ? Number(v).toFixed(dec) : '0';
-            const sign = (v) => (v > 0 ? '+' : '') + fmt(v);
+            const hasCount = st && st.count > 0;
+            const fmt = (v) => (hasCount && Number.isFinite(v)) ? Number(v).toFixed(dec) : '—';
+            const sign = (v) => (hasCount && Number.isFinite(v)) ? ((v > 0 ? '+' : '') + Number(v).toFixed(dec)) : '—';
+            const unitLabel = hasCount ? unit : 'NO DATA';
 
             function item(label, val, sub) {
                 return `
@@ -150,11 +153,11 @@
                 `;
             }
 
-            return item('Sekarang', fmt(st.cur), unit) +
-                item('Rata-rata', fmt(st.avg), unit) +
-                item('Terendah', fmt(st.min), unit) +
-                item('Tertinggi', fmt(st.max), unit) +
-                item('Tren', st.tr, st.tr === 'Stabil' ? 'Stabil' : `${sign(st.d)} ${unit}`);
+            return item('Sekarang', fmt(st.cur), unitLabel) +
+                item('Rata-rata', fmt(st.avg), unitLabel) +
+                item('Terendah', fmt(st.min), unitLabel) +
+                item('Tertinggi', fmt(st.max), unitLabel) +
+                item('Tren', hasCount ? st.tr : '—', !hasCount ? 'NO DATA' : (st.tr === 'Stabil' ? 'Stabil' : `${sign(st.d)} ${unit}`));
         }
 
         calculatePumpStats(rows) {
@@ -242,6 +245,17 @@
             });
         }
 
+        formatDateTime(t) {
+            if (!Number.isFinite(t)) return '—';
+            const d = new Date(t);
+            const datePart = d.toLocaleDateString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
+            return `${datePart} ${this.formatTime(t, false)}`;
+        }
+
         // Render full History Table on #p-riwayat
         renderRiwayat() {
             const tbody = document.getElementById('hbody');
@@ -271,16 +285,25 @@
                 const suhuSt = this.calculateStats(rows, r => convTemp(r.suhu));
                 const udaraSt = this.calculateStats(rows, r => r.udara);
 
-                hsum.innerHTML = `
-                    <div class="stat"><span class="label">Total baris</span><b>${total}</b><small>sesuai filter</small></div>
-                    <div class="stat"><span class="label">Rata-rata tanah</span><b>${tanahSt.avg.toFixed(0)}%</b><small>rentang ${tanahSt.min}–${tanahSt.max}%</small></div>
-                    <div class="stat"><span class="label">Rata-rata suhu</span><b>${suhuSt.avg.toFixed(1)}${Sec.escapeHTML(tUnit)}</b><small>rentang ${suhuSt.min.toFixed(1)}–${suhuSt.max.toFixed(1)}</small></div>
-                    <div class="stat"><span class="label">Rata-rata udara</span><b>${udaraSt.avg.toFixed(0)}%</b><small>rentang ${udaraSt.min}–${udaraSt.max}%</small></div>
-                `;
+                if (total === 0) {
+                    hsum.innerHTML = `
+                        <div class="stat"><span class="label">Total baris</span><b>0</b><small>NO DATA</small></div>
+                        <div class="stat"><span class="label">Rata-rata tanah</span><b>—</b><small>NO DATA</small></div>
+                        <div class="stat"><span class="label">Rata-rata suhu</span><b>—</b><small>NO DATA</small></div>
+                        <div class="stat"><span class="label">Rata-rata udara</span><b>—</b><small>NO DATA</small></div>
+                    `;
+                } else {
+                    hsum.innerHTML = `
+                        <div class="stat"><span class="label">Total baris</span><b>${total}</b><small>sesuai filter</small></div>
+                        <div class="stat"><span class="label">Rata-rata tanah</span><b>${tanahSt.avg.toFixed(0)}%</b><small>rentang ${tanahSt.min}–${tanahSt.max}%</small></div>
+                        <div class="stat"><span class="label">Rata-rata suhu</span><b>${suhuSt.avg.toFixed(1)}${Sec.escapeHTML(tUnit)}</b><small>rentang ${suhuSt.min.toFixed(1)}–${suhuSt.max.toFixed(1)}</small></div>
+                        <div class="stat"><span class="label">Rata-rata udara</span><b>${udaraSt.avg.toFixed(0)}%</b><small>rentang ${udaraSt.min}–${udaraSt.max}%</small></div>
+                    `;
+                }
             }
 
             if (pageRows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">Tidak ada data telemetri yang cocok dengan filter saat ini.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted)">NO DATA · Tidak ada data telemetri aktual yang cocok dengan filter saat ini.</td></tr>`;
             } else {
                 tbody.innerHTML = pageRows.map(r => {
                     const z = this.getZone(r.tanah);
@@ -289,12 +312,12 @@
 
                     // Distinguish source tag (100% Real Data: LIVE or CACHE)
                     const sourceTag = r.source === 'cache'
-                        ? `<span class="badge-tag amber" style="font-size:10px;">CACHE</span>`
-                        : `<span class="badge-tag emerald" style="font-size:10px;">LIVE</span>`;
+                        ? `<span class="badge-tag amber" style="font-size:10px;">CACHE · VALID</span>`
+                        : `<span class="badge-tag emerald" style="font-size:10px;">RTDB · VALID</span>`;
 
                     return `
                         <tr>
-                            <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatTime(r.t))}</td>
+                            <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatDateTime(r.t))}</td>
                             <td class="tabular-nums">${Number(r.suhu).toFixed(1)}°C</td>
                             <td class="tabular-nums">${Math.round(r.udara)}%</td>
                             <td class="tabular-nums" style="font-weight:600;">${Math.round(r.tanah)}%</td>
@@ -369,12 +392,12 @@
                 const pumpText = isPumpOn ? 'Perintah: Menyala' : 'Perintah: Mati';
 
                 const sourceBadge = row.source === 'cache'
-                    ? `<span class="badge-tag amber" style="font-size:9px;">CACHE</span>`
-                    : `<span class="badge-tag emerald" style="font-size:9px;">LIVE</span>`;
+                    ? `<span class="badge-tag amber" style="font-size:9px;">CACHE · VALID</span>`
+                    : `<span class="badge-tag emerald" style="font-size:9px;">RTDB · VALID</span>`;
 
                 return `
                     <tr>
-                        <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatTime(row.t))}</td>
+                        <td class="tabular-nums" style="color:var(--text-secondary);">${Sec.escapeHTML(this.formatDateTime(row.t))}</td>
                         <td class="tabular-nums" style="font-weight:600;">${Math.round(row.tanah)}%</td>
                         <td class="tabular-nums">${Math.round(row.udara)}%</td>
                         <td class="tabular-nums">${Number(row.suhu).toFixed(1)}°C</td>
