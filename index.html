@@ -17,7 +17,7 @@
 
     <!-- Mobile Header Bar -->
     <header class="mobile-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="u-flex-center u-gap-10">
             <button class="menu-toggle" id="menuToggle" type="button" aria-label="Buka Menu Navigasi">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -26,13 +26,13 @@
                 </svg>
             </button>
             <div class="brand-info">
-                <h1 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2;">Selada Keriting · Kelompok 5</h1>
-                <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Monitoring IoT &amp; CV · Node /kelompok5</p>
+                <h1 class="mobile-brand-title">Selada Keriting · Kelompok 5</h1>
+                <p class="mobile-brand-sub">Monitoring IoT &amp; CV · Node /kelompok5</p>
             </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="status-badge" style="font-size: 11px; padding: 3px 8px;">
-                <span class="pulse-dot" id="sysStatusDotHeader" style="width: 7px; height: 7px; display: inline-block; margin-right: 5px; background-color: var(--accent-emerald);"></span>
+        <div class="u-flex-center u-gap-8">
+            <span class="status-badge status-badge-compact" aria-live="polite">
+                <span class="pulse-dot pulse-dot-sm" id="sysStatusDotHeader"></span>
                 <span id="sysStatusTextHeader" class="tabular-nums">Live</span>
             </span>
         </div>
@@ -63,17 +63,17 @@
                 </button>
             </div>
 
-            <!-- Dynamic 12 Navigation Links Container -->
+            <!-- Dynamic 11 Navigation Links Container -->
             <nav class="sidebar-nav" id="nav" aria-label="Navigasi Halaman"></nav>
 
             <div class="sidebar-footer">
-                <div class="system-status-box">
+                <div class="system-status-box" aria-live="polite">
                     <div class="status-meta">
                         <span class="status-badge">
-                            <span class="pulse-dot" id="sysStatusDot" style="width: 8px; height: 8px; display: inline-block; margin-right: 6px; background-color: var(--accent-emerald);"></span>
+                            <span class="pulse-dot" id="sysStatusDot"></span>
                             <span id="sysStatusText">Menghubungkan…</span>
                         </span>
-                        <span class="badge-tag emerald" style="font-size: 10px;">Kelompok 5</span>
+                        <span class="badge-tag emerald u-fs-10">Kelompok 5</span>
                     </div>
                     <span class="status-sub" id="sysStatusSub">RTDB /kelompok5 · Asia-Southeast1</span>
                 </div>
@@ -83,14 +83,15 @@
         <!-- Main Content Workspace -->
         <main class="app-main">
             <!-- Global Top Bar Header -->
-            <header class="content-header" style="margin-bottom: 0;">
+            <header class="content-header u-mb-0">
                 <div class="header-title-block">
                     <h1 id="ptitle">Dashboard</h1>
                     <p id="psub">Pusat monitoring telemetri sensor, status pompa/relay, kamera live, dan pertumbuhan daun Kelompok 5</p>
                 </div>
-                <div class="header-meta-group">
+                <div class="header-meta-group" aria-live="polite">
                     <span class="badge-tag emerald tabular-nums" id="headerGroupBadge">Kelompok 5 · /kelompok5</span>
                     <span class="badge-tag blue tabular-nums" id="headerDateRange">Data: Menunggu Telemetri</span>
+                    <span class="badge-tag amber tabular-nums badge-stale" id="badgeStaleData" hidden>Data basi</span>
                     <span class="badge-tag tabular-nums" id="headerCamStatusBadge">Kamera: OFFLINE</span>
                     <span class="badge-tag amber tabular-nums" id="headerAlertsCount">0 Peringatan</span>
                 </div>
@@ -109,7 +110,7 @@
                                 </svg>
                             </div>
                             <div class="banner-title-block">
-                                <h2>Status Sistem &amp; Kampanye 42 Hari <span class="badge-tag emerald" style="font-size: 10px;">Kelompok 5</span></h2>
+                                <h2>Status Sistem &amp; Kampanye 42 Hari <span class="badge-tag emerald u-fs-10">Kelompok 5</span></h2>
                                 <p>100% Data Fisik Aktual · Jadwal foto 10 menit (07:00–16:50 WIB) mandiri ke microSD &amp; sinkronisasi tervalidasi FNV-1a</p>
                             </div>
                         </div>
@@ -142,7 +143,7 @@
                         </div>
                         <div class="status-strip-item">
                             <span class="strip-label">Foto Valid Terverifikasi</span>
-                            <strong class="strip-val tabular-nums" id="valImageTarget" style="color: var(--accent-emerald);">0 / 1.600</strong>
+                            <strong class="strip-val tabular-nums u-text-emerald" id="valImageTarget">0 / 1.600</strong>
                             <span class="strip-sub tabular-nums" id="badgeImageProgress">0% Target (60 Slot/Hari)</span>
                         </div>
                     </div>
@@ -159,9 +160,9 @@
                 </div>
 
                 <!-- TOP AREA: 4 CORE PHYSICAL TELEMETRY & ACTUATOR KPI CARDS -->
-                <div class="metrics-kpi-grid" id="metrics-kpi-grid">
+                <div class="metrics-kpi-grid" id="metrics-kpi-grid" aria-live="polite">
                     <!-- 1. Soil Moisture -->
-                    <article class="metric-card" id="cardMoisture">
+                    <article class="metric-card is-loading" id="cardMoisture" data-card-state="loading">
                         <div class="card-top">
                             <span class="metric-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"></path></svg>
@@ -178,12 +179,12 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subSoilMoisture">Target: 65% – 78% (Menunggu Sensor)</span>
-                            <span class="badge-tag">HW-390 GPIO 34</span>
+                            <span class="badge-tag u-nowrap">HW-390 GPIO 34</span>
                         </div>
                     </article>
 
                     <!-- 2. Air Temperature -->
-                    <article class="metric-card" id="cardTemp">
+                    <article class="metric-card is-loading" id="cardTemp" data-card-state="loading">
                         <div class="card-top">
                             <span class="metric-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"></path></svg>
@@ -200,12 +201,12 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subAirTemp">Target: 15–24°C (Menunggu Sensor)</span>
-                            <span class="badge-tag">DHT22 GPIO 4</span>
+                            <span class="badge-tag u-nowrap">DHT22 GPIO 4</span>
                         </div>
                     </article>
 
                     <!-- 3. Air Humidity -->
-                    <article class="metric-card" id="cardHumidity">
+                    <article class="metric-card is-loading" id="cardHumidity" data-card-state="loading">
                         <div class="card-top">
                             <span class="metric-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path></svg>
@@ -222,12 +223,12 @@
                         </div>
                         <div class="metric-footer">
                             <span id="subAirHumidity">Target: 60% – 80% (Menunggu Sensor)</span>
-                            <span class="badge-tag">DHT22 GPIO 4</span>
+                            <span class="badge-tag u-nowrap">DHT22 GPIO 4</span>
                         </div>
                     </article>
 
                     <!-- 4. Pump & Relay Status (SCADA Hysteresis) -->
-                    <article class="metric-card" id="cardPump">
+                    <article class="metric-card is-loading" id="cardPump" data-card-state="loading">
                         <div class="card-top">
                             <span class="metric-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
@@ -236,15 +237,15 @@
                             <span class="metric-badge" id="badgePumpStatus">STANDBY</span>
                         </div>
                         <div class="metric-body">
-                            <div class="metric-value-wrap" style="align-items: center; gap: 8px;">
-                                <span class="pulse-dot" id="pumpPulseDot" style="width: 9px; height: 9px; background-color: var(--text-muted); box-shadow: none;"></span>
-                                <span class="metric-value tabular-nums" id="valPumpStatus" style="font-size: 18px;">STANDBY / OFFLINE</span>
+                            <div class="metric-value-wrap u-flex-center u-gap-8">
+                                <span class="pulse-dot pulse-dot-muted" id="pumpPulseDot"></span>
+                                <span class="metric-value tabular-nums u-fs-18" id="valPumpStatus">STANDBY / OFFLINE</span>
                             </div>
-                            <span class="badge-tag blue">GPIO 26</span>
+                            <span class="badge-tag blue u-nowrap">GPIO 26</span>
                         </div>
                         <div class="metric-footer">
                             <span id="subPumpStatus">Histeresis: ON &lt;65% · OFF &gt;78%</span>
-                            <span class="badge-tag">Aktif-LOW</span>
+                            <button type="button" class="btn btn-secondary btn small u-nowrap" id="btnPumpControlReq" aria-haspopup="dialog">Kontrol Pompa</button>
                         </div>
                     </article>
                 </div>
@@ -274,18 +275,20 @@
                         </div>
                     </div>
 
-                    <!-- Interactive Legend & Readout Bar -->
+                    <!-- Interactive Toggleable Legend & Readout Bar -->
                     <div class="chart-legend-bar" id="chartLegendBar">
-                        <span class="legend-item"><i class="swatch emerald"></i>Kelembapan Tanah (%)</span>
-                        <span class="legend-item"><i class="swatch blue"></i>Kelembapan Udara (%)</span>
-                        <span class="legend-item"><i class="swatch amber"></i>Suhu Udara (°C)</span>
-                        <span class="legend-item"><i class="swatch rose"></i>Status Pompa/Relay (ON/OFF)</span>
+                        <div class="legend-items" role="group" aria-label="Filter seri grafik dengan klik atau sentuh">
+                            <button type="button" class="legend-item is-active" data-legend-series="tanah" aria-pressed="true"><i class="swatch emerald"></i>Kelembapan Tanah (%)</button>
+                            <button type="button" class="legend-item is-active" data-legend-series="udara" aria-pressed="true"><i class="swatch blue"></i>Kelembapan Udara (%)</button>
+                            <button type="button" class="legend-item is-active" data-legend-series="suhu" aria-pressed="true"><i class="swatch amber"></i>Suhu Udara (°C)</button>
+                            <button type="button" class="legend-item is-active" data-legend-series="pompa" aria-pressed="true"><i class="swatch rose"></i>Status Pompa/Relay (ON/OFF)</button>
+                        </div>
                         <span class="legend-source tabular-nums" id="chartSourceReadout">Sumber: Firebase /kelompok5</span>
                     </div>
 
                     <!-- Primary Wide Interactive SVG Chart with Floating Tooltip -->
                     <div class="chart-svg-wrap" id="chartSvgWrap">
-                        <div class="skeleton-shimmer" style="height: 100%;"></div>
+                        <div class="skeleton-shimmer u-h-full"></div>
                     </div>
 
                     <!-- 2 Wide Interactive Sub-Charts: Pump/Relay History & Actual Leaf Growth Progress -->
@@ -368,15 +371,15 @@
                                 <a href="#kamera" class="btn btn-secondary btn small" id="btnDashCamGoTab">Kontrol Penuh</a>
                             </div>
                             <div class="cam-preview-box" id="dashCamBox">
-                                <div class="visual-empty-placeholder" id="dashCamEmpty" style="width: 100%; height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
-                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                                    <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Stream Kamera Lokal Belum Terhubung</span>
-                                    <span style="font-size: 11px; text-align: center; max-width: 90%;">Masukkan IP lokal ESP32-CAM di atas untuk membuka stream MJPEG <code>/stream</code>. Saat offline, kamera tetap memotret tiap 10 menit ke microSD.</span>
+                                <div class="visual-empty-placeholder visual-empty-cam" id="dashCamEmpty">
+                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="u-opacity-50"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                    <span class="empty-title">Stream Kamera Lokal Belum Terhubung</span>
+                                    <span class="empty-sub">Masukkan IP lokal ESP32-CAM di atas untuk membuka stream MJPEG <code>/stream</code>. Saat offline, kamera tetap memotret tiap 10 menit ke microSD.</span>
                                 </div>
                                 <img id="dashCamImg" class="cam-preview-img" src="" alt="Feed Kamera Tanaman" style="display: none;">
                                 <div class="cam-controls-bar">
-                                    <span class="tabular-nums" id="dashCamTime" style="font-size: 11px; color: #ffffff;">Menunggu Kamera (/stream)</span>
-                                    <span class="badge-tag emerald tabular-nums" style="font-size: 10px;">1 Foto / Siklus RAM Aman</span>
+                                    <span class="tabular-nums cam-time-label" id="dashCamTime">Menunggu Kamera (/stream)</span>
+                                    <span class="badge-tag emerald tabular-nums u-fs-10">1 Foto / Siklus RAM Aman</span>
                                 </div>
                             </div>
                         </div>
@@ -398,37 +401,37 @@
                         <div class="panel-card-body">
                             <div class="plant-health-view" id="plant-health-view">
                                 <div class="plant-health-visual-wrap">
-                                    <div class="visual-empty-placeholder" id="plantHealthEmpty" style="width: 100%; height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
-                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                                        <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">NO DATA · Belum Ada Citra Capture Aktual</span>
-                                        <span style="font-size: 11px;">Menunggu hasil capture aktual ESP32-CAM (07:00–16:50 WIB)</span>
+                                    <div class="visual-empty-placeholder visual-empty-health" id="plantHealthEmpty">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="u-opacity-50"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                                        <span class="empty-title">NO DATA · Belum Ada Citra Capture Aktual</span>
+                                        <span class="empty-sub">Menunggu hasil capture aktual ESP32-CAM (07:00–16:50 WIB)</span>
                                     </div>
                                     <img id="plantHealthImg" class="plant-health-img" src="" alt="Analisis Kontur Daun" style="display: none;">
                                 </div>
                                 <div class="health-metrics-row">
                                     <div class="health-mini-stat">
                                         <span class="lbl">Kondisi Tanaman</span>
-                                        <b id="plantHealthCond" style="color: var(--text-muted);">NO DATA</b>
+                                        <b id="plantHealthCond" class="u-text-muted">NO DATA</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Lebar Maksimal</span>
-                                        <b class="tabular-nums" id="plantHealthWidth" style="color: var(--text-muted);">— px</b>
+                                        <b class="tabular-nums u-text-muted" id="plantHealthWidth">— px</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Luas Kanopi Siluet</span>
-                                        <b class="tabular-nums" id="plantHealthArea" style="color: var(--text-muted);">— px²</b>
+                                        <b class="tabular-nums u-text-muted" id="plantHealthArea">— px²</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Tetens VPD</span>
-                                        <b class="tabular-nums" id="plantHealthVPD" style="color: var(--text-muted);">— kPa</b>
+                                        <b class="tabular-nums u-text-muted" id="plantHealthVPD">— kPa</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Status Validasi QC</span>
-                                        <b id="plantHealthQC" style="color: var(--text-muted);">NO DATA</b>
+                                        <b id="plantHealthQC" class="u-text-muted">NO DATA</b>
                                     </div>
                                     <div class="health-mini-stat">
                                         <span class="lbl">Galeri Kampanye</span>
-                                        <a href="#pertumbuhan-daun" style="font-size: 12px; font-weight: 700; color: var(--accent-blue); text-decoration: none;">Buka Galeri Penuh →</a>
+                                        <a href="#pertumbuhan-daun" class="link-action">Buka Galeri Penuh →</a>
                                     </div>
                                 </div>
                                 <div class="dash-mini-gallery" id="dashCaptureGallery"></div>
@@ -483,7 +486,7 @@
                             </div>
                             <div class="panel-card-body">
                                 <div class="ai-recom-list" id="aiRecomList">
-                                    <div class="recom-item warn" style="grid-column: 1 / -1;">
+                                    <div class="recom-item warn u-col-span-full">
                                         <div class="recom-title">STATUS: NO DATA / MENUNGGU TELEMETRI</div>
                                         <div class="recom-desc">Rekomendasi agronomi dan kalkulasi VPD/GDD hanya ditampilkan setelah menerima data aktual dari sensor fisik &amp; Firebase RTDB.</div>
                                     </div>
@@ -500,7 +503,7 @@
                                 <span class="badge-tag emerald">100% Data Riil</span>
                             </div>
                             <div class="panel-card-body">
-                                <div class="alerts-section" id="dashAlertsList"></div>
+                                <div class="alerts-section" id="dashAlertsList" aria-live="polite"></div>
                             </div>
                         </article>
                     </div>
@@ -514,11 +517,11 @@
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Gambar Valid</span>
-                        <span class="val tabular-nums" id="statValidImages" style="color: var(--accent-emerald);">0</span>
+                        <span class="val tabular-nums u-text-emerald" id="statValidImages">0</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Gambar Gagal</span>
-                        <span class="val tabular-nums" id="statFailedImages" style="color: var(--accent-rose);">0</span>
+                        <span class="val tabular-nums u-text-rose" id="statFailedImages">0</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Sensor Aktif</span>
@@ -526,7 +529,7 @@
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Progres Target</span>
-                        <span class="val tabular-nums" id="statTargetPct" style="color: var(--accent-blue);">0%</span>
+                        <span class="val tabular-nums u-text-blue" id="statTargetPct">0%</span>
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Durasi Monitoring</span>
@@ -534,7 +537,7 @@
                     </div>
                     <div class="footer-stat-card">
                         <span class="lbl">Status Sistem</span>
-                        <span class="val" id="statSystemStatus" style="color: var(--text-muted); font-size: 13px;">Menghubungkan…</span>
+                        <span class="val u-text-muted u-fs-13" id="statSystemStatus">Menghubungkan…</span>
                     </div>
                 </div>
             </section>
@@ -593,7 +596,7 @@
                                 <span class="msg" id="corr"></span>
                             </div>
                             <div id="zoneShare"></div>
-                            <div class="chart scatter" id="ch-scatter" style="height: 180px; margin-top: 8px;"></div>
+                            <div class="chart scatter chart-scatter-box" id="ch-scatter"></div>
                         </article>
                     </div>
                 </div>
@@ -666,7 +669,7 @@
                                     </select>
                                 </div>
                             </div>
-                            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+                            <div class="u-flex-wrap-center u-gap-8 u-mt-6">
                                 <button class="btn btn-secondary btn small" type="button" id="useAp">Pakai 192.168.4.1</button>
                             </div>
                         </article>
@@ -684,7 +687,7 @@
                                 <div class="t"><b>Antrean Sinkronisasi</b><span>1 foto/siklus + konfirmasi FNV-1a</span></div>
                                 <div class="ctl"><span class="badge-tag blue tabular-nums" id="camSyncQueueStatus">Siaga Mandiri</span></div>
                             </div>
-                            <p class="hint" style="margin-top:6px;">ESP32-CAM memotret otomatis setiap 10 menit (07:00–16:50 WIB) selama 42 hari langsung ke microSD tanpa bergantung Wi-Fi. File lokal hanya dihapus setelah server mengonfirmasi penerimaan checksum FNV-1a.</p>
+                            <p class="hint u-mt-6">ESP32-CAM memotret otomatis setiap 10 menit (07:00–16:50 WIB) selama 42 hari langsung ke microSD tanpa bergantung Wi-Fi. File lokal hanya dihapus setelah server mengonfirmasi penerimaan checksum FNV-1a.</p>
                         </article>
 
                         <article class="panel">
@@ -724,22 +727,22 @@
                 <div class="metrics-kpi-grid">
                     <div class="metric-card">
                         <span class="metric-title">Progres Siklus Monitoring</span>
-                        <div class="metric-value tabular-nums" style="color: var(--accent-blue);">Kampanye 42 Hari</div>
+                        <div class="metric-value tabular-nums u-text-blue">Kampanye 42 Hari</div>
                         <span class="badge-tag blue">60 Slot / Hari (07:00–16:50 WIB)</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Target Gambar Valid</span>
-                        <div class="metric-value tabular-nums" id="growthValidCount" style="color: var(--accent-emerald);">0 / 1.600</div>
+                        <div class="metric-value tabular-nums u-text-emerald" id="growthValidCount">0 / 1.600</div>
                         <span class="badge-tag emerald" id="growthTargetPct">0% Target Terpenuhi</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Gambar Gagal / Reject QC</span>
-                        <div class="metric-value tabular-nums" id="growthFailedCount" style="color: var(--accent-rose);">0</div>
+                        <div class="metric-value tabular-nums u-text-rose" id="growthFailedCount">0</div>
                         <span class="badge-tag rose">Pencatatan Riil</span>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Jadwal Capture Otomatis</span>
-                        <div class="metric-value" style="font-size: 18px;">Tiap 10 Menit</div>
+                        <div class="metric-value u-fs-18">Tiap 10 Menit</div>
                         <span class="badge-tag" id="growthNextCaptureCountdown">Siaga Terjadwal</span>
                     </div>
                 </div>
@@ -829,7 +832,7 @@
                                 <button type="button" class="btn-seg" id="growthViewMask">Siluet Mask</button>
                                 <button type="button" class="btn-seg" id="growthViewOrig">Foto Asli</button>
                             </div>
-                            <select id="growthFilterStatus" style="font-size: 12px; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--bg-surface-elevated); color: var(--text-primary); border: 1px solid var(--border-subtle);">
+                            <select id="growthFilterStatus" class="select-compact">
                                 <option value="all">Semua Kualitas</option>
                                 <option value="valid">Hanya Valid</option>
                                 <option value="invalid">Hanya Gagal/Reject</option>
@@ -844,8 +847,8 @@
 <!-- ================= TAB 4: RIWAYAT ================= -->
             <section class="page" id="p-riwayat" hidden>
                 <article class="panel">
-                    <div class="toolbar" style="margin-bottom: 8px;">
-                        <span class="label" style="font-size:11px;color:var(--text-muted);">Status:</span>
+                    <div class="toolbar u-mb-8">
+                        <span class="label toolbar-label">Status:</span>
                         <div class="ctl">
                             <select id="fStatus">
                                 <option value="all">Semua Zona</option>
@@ -854,7 +857,7 @@
                                 <option value="wet">Basah (&gt;78%)</option>
                             </select>
                         </div>
-                        <span class="label" style="font-size:11px;color:var(--text-muted);margin-left:8px;">Rentang:</span>
+                        <span class="label toolbar-label u-ml-8">Rentang:</span>
                         <div class="ctl">
                             <select id="fRange">
                                 <option value="0">Seluruh Sesi</option>
@@ -864,7 +867,7 @@
                                 <option value="3600">1 Jam</option>
                             </select>
                         </div>
-                        <span class="label" style="font-size:11px;color:var(--text-muted);margin-left:8px;">Tampilan:</span>
+                        <span class="label toolbar-label u-ml-8">Tampilan:</span>
                         <div class="ctl">
                             <select id="fAgg">
                                 <option value="0">Per Pembacaan</option>
@@ -899,12 +902,12 @@
                         </div>
                     </div>
 
-                    <div class="toolbar" style="margin-top: 10px;">
+                    <div class="toolbar u-mt-10">
                         <button class="btn btn-primary" type="button" id="csvCopy">Salin CSV</button>
                         <button class="btn btn-secondary" type="button" id="csvDl">Unduh CSV</button>
                         <button class="btn btn-secondary" type="button" id="hClear">Hapus Riwayat Sesi</button>
                     </div>
-                    <textarea id="csvbox" hidden readonly style="width:100%;height:100px;margin-top:10px;"></textarea>
+                    <textarea id="csvbox" class="csv-export-box" hidden readonly></textarea>
                 </article>
             </section>
 
@@ -920,21 +923,21 @@
                         <span class="badge-tag emerald">Decision Support System</span>
                     </div>
                     <div class="panel-card-body">
-                        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));">
+                        <div class="grid grid-auto-340">
                             <article class="panel">
                                 <div class="panel-head">
                                     <h2>Vapor Pressure Deficit (Tetens VPD)</h2>
                                     <span class="badge-tag emerald">Target: 0.40 – 0.85 kPa</span>
                                 </div>
-                                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
-                                    <div style="font-size: 26px; font-weight: 700; color: var(--accent-emerald);" class="tabular-nums" id="dssVpdValue">NO DATA</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);" id="dssVpdMeta">Sumber: OFFLINE · Menunggu sensor DHT22</div>
-                                    <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                                <div class="dss-metric-stack">
+                                    <div class="dss-big-val u-text-emerald tabular-nums" id="dssVpdValue">NO DATA</div>
+                                    <div class="dss-meta-sub" id="dssVpdMeta">Sumber: OFFLINE · Menunggu sensor DHT22</div>
+                                    <p class="dss-formula-desc">
                                         Dihitung dengan rumus empiris Tetens dari telemetri aktual:
                                         <br><code>e_s(T) = 0.61078 × exp(17.27 × T / (T + 237.3))</code>
                                         <br><code>VPD = e_s(T) × (1 - RH / 100)</code>
                                     </p>
-                                    <div class="alert-box warn" id="dssVpdAlert" style="margin-top: 6px;">
+                                    <div class="alert-box warn u-mt-6" id="dssVpdAlert">
                                         <div class="alert-box-content">
                                             <h4>Status VPD: Menunggu Telemetri</h4>
                                             <p>Perhitungan VPD hanya ditampilkan jika data suhu dan kelembapan udara aktual telah diterima.</p>
@@ -948,15 +951,15 @@
                                     <h2>Growing Degree Days (GDD Fisiologis)</h2>
                                     <span class="badge-tag blue">Tbase = 4.0°C</span>
                                 </div>
-                                <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
-                                    <div style="font-size: 26px; font-weight: 700; color: var(--accent-blue);" class="tabular-nums" id="dssGddValue">NO DATA</div>
-                                    <div style="font-size: 11px; color: var(--text-muted);" id="dssGddMeta">Sumber: OFFLINE · 0 sampel termal</div>
-                                    <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                                <div class="dss-metric-stack">
+                                    <div class="dss-big-val u-text-blue tabular-nums" id="dssGddValue">NO DATA</div>
+                                    <div class="dss-meta-sub" id="dssGddMeta">Sumber: OFFLINE · 0 sampel termal</div>
+                                    <p class="dss-formula-desc">
                                         Formula laju termal harian selada keriting dari suhu terukur:
                                         <br><code>GDD_rate = max(0, T_aktual - 4.0°C)</code>
                                         <br>Target siklus selada keriting: ~650–700 °C·hari (42 HST).
                                     </p>
-                                    <div class="alert-box warn" id="dssGddAlert" style="margin-top: 6px;">
+                                    <div class="alert-box warn u-mt-6" id="dssGddAlert">
                                         <div class="alert-box-content">
                                             <h4>Status GDD: Menunggu Telemetri</h4>
                                             <p>Akumulasi satuan panas GDD memerlukan telemetri suhu aktual dari sensor fisik DHT22.</p>
@@ -966,7 +969,7 @@
                             </article>
                         </div>
 
-                        <article class="panel" style="margin-top: 14px;">
+                        <article class="panel u-mt-14">
                             <div class="panel-head">
                                 <h2>Kalkulasi Laju Termal Harian (Berbasis Suhu Terukur)</h2>
                                 <span class="badge-tag blue">Bukan Pengganti Pengukuran Fisik</span>
@@ -997,7 +1000,7 @@
                         <button type="button" class="ai-chip">Pengaruh Suhu & Resiko Bolting</button>
                         <button type="button" class="ai-chip">Panduan Panen & HST</button>
                     </div>
-                    <div class="ai-chat-thread" id="aiChatThreadPage" style="height: 380px;"></div>
+                    <div class="ai-chat-thread ai-chat-thread-page" id="aiChatThreadPage"></div>
                     <div class="ai-input-bar">
                         <input type="text" id="aiChatInputPage" placeholder="Tanyakan seputar agronomi selada, mikroklimat, atau irigasi..." autocomplete="off">
                         <button type="button" class="btn btn-primary" id="btnSendQueryPage">Kirim</button>
@@ -1013,28 +1016,31 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                             Kontrol Otomasi Irigasi SCADA & Logika Histeresis
                         </div>
-                        <span class="badge-tag emerald">SCADA Setpoint vs Feedback</span>
+                        <div class="u-flex-center u-gap-8">
+                            <span class="badge-tag emerald">SCADA Setpoint vs Feedback</span>
+                            <button type="button" class="btn btn-primary btn small" id="btnScadaPumpTrigger" aria-haspopup="dialog">Uji / Override Pompa</button>
+                        </div>
                     </div>
                     <div class="panel-card-body">
-                        <div class="metrics-kpi-grid" style="margin-bottom: 16px;">
+                        <div class="metrics-kpi-grid u-mb-16">
                             <div class="metric-card">
                                 <span class="metric-title">Perintah Kontroler (Setpoint)</span>
-                                <div class="metric-value" id="scadaPumpCommand" style="font-size: 20px;">PERINTAH: OFF</div>
+                                <div class="metric-value u-fs-20" id="scadaPumpCommand">PERINTAH: OFF</div>
                                 <span class="badge-tag blue">Logika Histeresis</span>
                             </div>
                             <div class="metric-card">
                                 <span class="metric-title">Konfirmasi Relay Fisik</span>
-                                <div class="metric-value" id="scadaRelayActual" style="font-size: 20px; color: var(--text-muted);">BELUM TERHUBUNG</div>
+                                <div class="metric-value u-fs-20 u-text-muted" id="scadaRelayActual">BELUM TERHUBUNG</div>
                                 <span class="badge-tag">GPIO 26 Aktif-LOW</span>
                             </div>
                             <div class="metric-card">
                                 <span class="metric-title">Batas Kering (Pemicu ON)</span>
-                                <div class="metric-value tabular-nums" style="font-size: 20px; color: var(--accent-amber);">&lt; 65%</div>
+                                <div class="metric-value tabular-nums u-fs-20 u-text-amber">&lt; 65%</div>
                                 <span class="badge-tag amber">Menyala Otomatis</span>
                             </div>
                             <div class="metric-card">
                                 <span class="metric-title">Batas Basah (Pemicu OFF)</span>
-                                <div class="metric-value tabular-nums" style="font-size: 20px; color: var(--accent-emerald);">&gt; 78%</div>
+                                <div class="metric-value tabular-nums u-fs-20 u-text-emerald">&gt; 78%</div>
                                 <span class="badge-tag emerald">Mati Otomatis</span>
                             </div>
                         </div>
@@ -1043,9 +1049,9 @@
                             <div class="panel-head">
                                 <h2>Keamanan Sistem: Perlindungan Pompa Kering & Timeout</h2>
                             </div>
-                            <div style="font-size: 13px; line-height: 1.7; color: var(--text-secondary);">
+                            <div class="scada-safety-copy">
                                 <p>Sistem menerapkan pengamanan berlapis:</p>
-                                <ul style="margin-left: 20px; margin-top: 6px;">
+                                <ul class="scada-safety-list">
                                     <li><b>Batas Durasi Maksimal (Timeout):</b> Pompa dibatasi menyala kontinu maksimal 120 detik untuk mencegah over-irrigation bila sensor tercabut.</li>
                                     <li><b>Deadband Histeresis (65% – 78%):</b> Mencegah osilasi relay sakelar frekuensi tinggi (chattering) yang merusak kontak mekanis relay.</li>
                                     <li><b>Pemisahan Status SCADA:</b> Status permintaan perangkat lunak (<code>pumpCommand</code>) tidak pernah disamakan dengan sakelar fisik (<code>relayActual</code>) tanpa verifikasi sinyal feedback ESP32.</li>
@@ -1079,7 +1085,7 @@
                                 <h2>Aturan Peringatan Otomatis</h2>
                             </div>
                             <div id="rules"></div>
-                            <p class="hint" style="margin-top: 10px;">Peringatan dihitung secara real-time pada browser dari paket data telemetri yang masuk.</p>
+                            <p class="hint u-mt-10">Peringatan dihitung secara real-time pada browser dari paket data telemetri yang masuk.</p>
                         </article>
                     </aside>
                 </div>
@@ -1095,8 +1101,8 @@
                             </div>
                             <div class="field">
                                 <div class="t"><b>URL Firebase RTDB</b><span>Endpoint data sensor real-time.</span></div>
-                                <div class="ctl" style="flex:1;max-width:380px;">
-                                    <input type="text" id="setUrl" style="width:100%;">
+                                <div class="ctl ctl-url-group">
+                                    <input type="text" id="setUrl" class="u-w-full">
                                     <button class="btn btn-secondary btn small" type="button" id="testBtn">Uji Koneksi</button>
                                 </div>
                             </div>
@@ -1130,14 +1136,14 @@
                             <div class="field">
                                 <div class="t"><b>Kering di Bawah</b><span>Pompa menyala otomatis.</span></div>
                                 <div class="ctl">
-                                    <input type="number" id="setDry" min="1" max="98" style="width:70px;">
+                                    <input type="number" id="setDry" min="1" max="98" class="u-w-70">
                                     <span>%</span>
                                 </div>
                             </div>
                             <div class="field">
                                 <div class="t"><b>Basah di Atas</b><span>Pompa mati otomatis.</span></div>
                                 <div class="ctl">
-                                    <input type="number" id="setWet" min="2" max="99" style="width:70px;">
+                                    <input type="number" id="setWet" min="2" max="99" class="u-w-70">
                                     <span>%</span>
                                 </div>
                             </div>
@@ -1185,7 +1191,7 @@
                                 <h2>Penyimpanan Lokal</h2>
                             </div>
                             <p class="hint">Pengaturan dan alamat IP kamera disimpan dalam browser ini saja.</p>
-                            <div style="margin-top: 10px;">
+                            <div class="u-mt-10">
                                 <button class="btn btn-secondary" type="button" id="setReset">Kembalikan Bawaan</button>
                             </div>
                         </article>
@@ -1208,12 +1214,12 @@
                                 <span class="arrow">HTTP Poll →</span>
                                 <span class="node">Dashboard Selada</span>
                             </div>
-                            <div class="flow" style="margin-top:8px;">
+                            <div class="flow u-mt-8">
                                 <span class="node">ESP32-CAM</span>
                                 <span class="arrow">HTTP LAN, port 81 →</span>
                                 <span class="node">Dashboard Selada</span>
                             </div>
-                            <p class="hint" style="margin-top:8px;">Data telemetri sensor ditransmisikan melalui Firebase RTDB secara global, sedangkan feed video kamera ESP32-CAM disajikan melalui jaringan lokal WiFi yang sama.</p>
+                            <p class="hint u-mt-8">Data telemetri sensor ditransmisikan melalui Firebase RTDB secara global, sedangkan feed video kamera ESP32-CAM disajikan melalui jaringan lokal WiFi yang sama.</p>
                         </article>
 
                         <article class="panel">
@@ -1302,7 +1308,7 @@
   "relay": false,
   "status": "Optimal"
 }</pre>
-                            <p class="hint" style="margin-top:8px;">Data tersinkronisasi di node <code>/kelompok5</code> (serta kompatibel dengan <code>/history</code> &amp; <code>/current</code>) secara real-time.</p>
+                            <p class="hint u-mt-8">Data tersinkronisasi di node <code>/kelompok5</code> (serta kompatibel dengan <code>/history</code> &amp; <code>/current</code>) secara real-time.</p>
                         </article>
                     </aside>
                 </div>
@@ -1310,33 +1316,57 @@
         </main>
     </div>
 
+    <!-- Mobile Bottom Navigation Bar (Stage 1 + Stage 2) -->
+    <nav class="bottom-nav" id="bottomNav" aria-label="Navigasi Cepat Mobile">
+        <a href="#ringkasan" class="bottom-nav-item active" data-bnav="ringkasan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            <span>Dashboard</span>
+        </a>
+        <a href="#sensor" class="bottom-nav-item" data-bnav="sensor">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+            <span>Sensor</span>
+        </a>
+        <a href="#kamera" class="bottom-nav-item" data-bnav="kamera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            <span>Kamera</span>
+        </a>
+        <a href="#pertumbuhan-daun" class="bottom-nav-item" data-bnav="pertumbuhan-daun">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="M12 6v6l4 2"/></svg>
+            <span>Daun</span>
+        </a>
+        <button type="button" class="bottom-nav-item" id="bottomNavMoreBtn" aria-label="Buka menu lengkap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            <span>Menu</span>
+        </button>
+    </nav>
+
     <!-- Measurement Inspector Modal Dialog -->
-    <div class="modal-overlay" id="growthDetailModal">
+    <div class="modal-overlay" id="growthDetailModal" role="dialog" aria-modal="true" aria-labelledby="modalImageId">
         <div class="modal-window">
             <div class="modal-header">
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div class="u-flex-center u-gap-8">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-                    <h3 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0;" id="modalImageId">Detail Segmentasi Daun</h3>
+                    <h3 class="modal-title-text" id="modalImageId">Detail Segmentasi Daun</h3>
                 </div>
-                <button type="button" class="btn btn-secondary btn small" id="modalCloseBtn">Tutup</button>
+                <button type="button" class="btn btn-secondary btn small" id="modalCloseBtn">Tutup (Esc)</button>
             </div>
             <div class="modal-body">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-                    <div style="text-align: center;">
-                        <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Foto Asli (Central ROI)</span>
-                        <img id="modalOrigImg" src="" alt="Asli" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: #000;">
+                <div class="modal-compare-grid">
+                    <div class="modal-img-col">
+                        <span class="modal-img-caption">Foto Asli (Central ROI)</span>
+                        <img id="modalOrigImg" src="" alt="Asli" class="modal-preview-img">
                     </div>
-                    <div style="text-align: center;">
-                        <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Siluet Hitam-Putih (ExG)</span>
-                        <img id="modalMaskImg" src="" alt="Siluet" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: #000;">
+                    <div class="modal-img-col">
+                        <span class="modal-img-caption">Siluet Hitam-Putih (ExG)</span>
+                        <img id="modalMaskImg" src="" alt="Siluet" class="modal-preview-img">
                     </div>
-                    <div style="text-align: center;">
-                        <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Kontur & Bounding Box</span>
-                        <img id="modalOverlayImg" src="" alt="Kontur" style="width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: #000;">
+                    <div class="modal-img-col">
+                        <span class="modal-img-caption">Kontur &amp; Bounding Box</span>
+                        <img id="modalOverlayImg" src="" alt="Kontur" class="modal-preview-img">
                     </div>
                 </div>
 
-                <div class="metrics-kpi-grid" style="margin-top: 8px;">
+                <div class="metrics-kpi-grid u-mt-8">
                     <div class="metric-card">
                         <span class="metric-title">Lebar Daun</span>
                         <div class="metric-value tabular-nums" id="modalWidthVal">— px</div>
@@ -1347,20 +1377,48 @@
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Waktu Capture</span>
-                        <div class="metric-value tabular-nums" id="modalTimeVal" style="font-size: 14px;">—</div>
+                        <div class="metric-value tabular-nums u-fs-14" id="modalTimeVal">—</div>
                     </div>
                     <div class="metric-card">
                         <span class="metric-title">Status QC</span>
-                        <div class="metric-value" id="modalQCStatus" style="font-size: 14px;">VALID</div>
-                        <span class="badge-tag" id="modalQCDetail" style="margin-top: 4px;">—</span>
+                        <div class="metric-value u-fs-14" id="modalQCStatus">VALID</div>
+                        <span class="badge-tag u-mt-4" id="modalQCDetail">—</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Pump Control Confirmation Dialog Modal -->
+    <div class="modal-overlay" id="pumpConfirmModal" role="dialog" aria-modal="true" aria-labelledby="pumpConfirmTitle">
+        <div class="modal-window modal-window-sm">
+            <div class="modal-header">
+                <div class="u-flex-center u-gap-8">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <h3 class="modal-title-text" id="pumpConfirmTitle">Konfirmasi Perintah Pompa / Relay SCADA</h3>
+                </div>
+                <button type="button" class="btn btn-secondary btn small" id="btnPumpModalClose">Tutup (Esc)</button>
+            </div>
+            <div class="modal-body">
+                <p class="dss-formula-desc" id="pumpConfirmDesc">
+                    Anda akan mengirim perubahan setpoint perintah pompa irigasi (GPIO 26 Aktif-LOW). Pastikan media tanam dan instalasi pipa siap sebelum mengeksekusi perintah.
+                </p>
+                <div class="alert-box warn">
+                    <div class="alert-box-content">
+                        <h4>Catatan Keamanan Hardware</h4>
+                        <p>Perintah kontroler (<code>pumpCommand</code>) tetap tunduk pada batas proteksi timeout 120 detik dan verifikasi feedback fisik (<code>relayActual</code>) dari ESP32 Kelompok 5.</p>
+                    </div>
+                </div>
+                <div class="modal-actions-row">
+                    <button type="button" class="btn btn-secondary" id="btnPumpConfirmCancel">Batal</button>
+                    <button type="button" class="btn btn-primary" id="btnPumpConfirmProceed">Konfirmasi &amp; Kirim Perintah</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Micro-Toast Notification Container -->
-    <div class="toast-container" id="toastContainer"></div>
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
     <!-- Modular Script Imports -->
     <script src="js/firebase-config.js"></script>
