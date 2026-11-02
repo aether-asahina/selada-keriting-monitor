@@ -58,6 +58,9 @@
             // SCADA Pump States: Distinction between controller command setpoint and physical relay confirmation
             this.lastPumpCommand = false;
 
+            // Interactive Chart Series Visibility Filter
+            this.activeSeries = { tanah: true, udara: true, suhu: true, pompa: true };
+
             // Camera engine state & resource handles
             this.cam = {
                 mode: 'stream',
@@ -204,6 +207,10 @@
             if (ptitle) ptitle.textContent = cur.name;
             if (psub) psub.textContent = cur.sub;
 
+            $$('#bottomNav [data-bnav]').forEach(item => {
+                item.classList.toggle('active', item.dataset.bnav === pageId);
+            });
+
             this.closeMobileSidebar();
             this.renderAllViews();
 
@@ -301,6 +308,106 @@
                     this.chartTimeWindowSec = parseInt(btn.dataset.chartWindow, 10);
                     this.renderOverviewChart();
                 });
+            });
+
+            // Interactive Chart Series Legend Filter Toggle
+            $$('[data-legend-series]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const series = btn.dataset.legendSeries;
+                    if (!series) return;
+                    if (!this.activeSeries) this.activeSeries = { tanah: true, udara: true, suhu: true, pompa: true };
+                    this.activeSeries[series] = !this.activeSeries[series];
+                    const active = this.activeSeries[series];
+                    btn.classList.toggle('is-active', active);
+                    btn.classList.toggle('is-muted', !active);
+                    btn.setAttribute('aria-pressed', String(active));
+                    this.renderOverviewChart();
+                });
+            });
+
+            // Pump Control Confirmation Dialog Modal Handlers
+            const btnPumpControlReq = $('#btnPumpControlReq');
+            const pumpConfirmModal = $('#pumpConfirmModal');
+            const btnPumpModalClose = $('#btnPumpModalClose');
+            const btnPumpConfirmCancel = $('#btnPumpConfirmCancel');
+            const btnPumpConfirmProceed = $('#btnPumpConfirmProceed');
+            const pumpConfirmDesc = $('#pumpConfirmDesc');
+
+            const openPumpModal = () => {
+                if (!pumpConfirmModal) return;
+                const isCurrentlyOn = !!this.lastPumpCommand;
+                const targetAction = isCurrentlyOn ? 'OFF (Matikan Irigasi)' : 'ON (Nyalakan Irigasi)';
+                if (pumpConfirmDesc) {
+                    pumpConfirmDesc.innerHTML = `
+                        Status perintah saat ini: <strong>${isCurrentlyOn ? 'ON (Irigasi Aktif)' : 'OFF (Siaga Otomatis)'}</strong>.<br>
+                        Tindakan yang akan dikirim: <strong class="u-text-${isCurrentlyOn ? 'rose' : 'emerald'}">${targetAction}</strong>.<br>
+                        Apakah Anda yakin ingin mengirim perintah <strong>${targetAction}</strong> ke kontroler SCADA (GPIO 26)?
+                    `;
+                }
+                pumpConfirmModal.classList.add('open');
+            };
+
+            const closePumpModal = () => {
+                if (pumpConfirmModal) pumpConfirmModal.classList.remove('open');
+            };
+
+            if (btnPumpControlReq) btnPumpControlReq.addEventListener('click', openPumpModal);
+            if (btnPumpModalClose) btnPumpModalClose.addEventListener('click', closePumpModal);
+            if (btnPumpConfirmCancel) btnPumpConfirmCancel.addEventListener('click', closePumpModal);
+            if (pumpConfirmModal) {
+                pumpConfirmModal.addEventListener('click', (e) => {
+                    if (e.target === pumpConfirmModal) closePumpModal();
+                });
+            }
+
+            if (btnPumpConfirmProceed) {
+                btnPumpConfirmProceed.addEventListener('click', () => {
+                    this.lastPumpCommand = !this.lastPumpCommand;
+                    const newCmd = this.lastPumpCommand;
+                    closePumpModal();
+                    this.updateMetricsCards(window.DatasetStore.getLatest());
+                    this.toast(
+                        `Perintah manual pompa ${newCmd ? 'ON (Irigasi Aktif)' : 'OFF (Siaga)'} dikirim ke SCADA (Proteksi batas 120s aktif).`,
+                        newCmd ? 'amber' : 'emerald'
+                    );
+                    if (this.activePage === 'ringkasan') {
+                        this.renderOverviewChart();
+                        this.renderDashboardPumpChart();
+                    }
+                });
+            }
+
+            // Mobile Bottom Navigation Bar Bindings
+            $$('#bottomNav [data-bnav]').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const target = item.dataset.bnav;
+                    location.hash = `#${target}`;
+                });
+            });
+
+            const bottomNavMoreBtn = $('#bottomNavMoreBtn');
+            if (bottomNavMoreBtn) {
+                bottomNavMoreBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const isOpen = sidebar && sidebar.classList.contains('open');
+                    if (isOpen) {
+                        this.closeMobileSidebar();
+                    } else {
+                        openMenu();
+                    }
+                });
+            }
+
+            // Global Keyboard Dismissal (Escape Key) for Modals & Mobile Drawer
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' || e.key === 'Esc') {
+                    closePumpModal();
+                    if (window.GrowthStore && typeof window.GrowthStore.closeDetailModal === 'function') {
+                        window.GrowthStore.closeDetailModal();
+                    }
+                    this.closeMobileSidebar();
+                }
             });
 
             const winSeg = $('#winSeg');
@@ -1032,6 +1139,9 @@
             } else if (!isOffline && wasOffline) {
                 this.ruleStates.off = false;
             }
+
+            // Continuously evaluate data freshness & stale telemetry badge
+            this.updateHeaderMeta(latest);
         }
 
         addAlert(sev, rule, msg, t) {
@@ -1147,9 +1257,9 @@
                 return;
             }
 
-            this.renderDetailedSVGChart('ch-tanah', rows, r => r.tanah, '%', [S.dry, S.wet], 0, 100, '#10b981');
-            this.renderDetailedSVGChart('ch-suhu', rows, r => convTemp(r.suhu), tUnit, [convTemp(15), convTemp(24)], null, null, '#f59e0b');
-            this.renderDetailedSVGChart('ch-udara', rows, r => r.udara, '%', [60, 80], 40, 100, '#3b82f6');
+            this.renderDetailedSVGChart('ch-tanah', rows, r => r.tanah, '%', [S.dry, S.wet], 0, 100, 'var(--accent-emerald)');
+            this.renderDetailedSVGChart('ch-suhu', rows, r => convTemp(r.suhu), tUnit, [convTemp(15), convTemp(24)], null, null, 'var(--accent-amber)');
+            this.renderDetailedSVGChart('ch-udara', rows, r => r.udara, '%', [60, 80], 40, 100, 'var(--accent-blue)');
 
             const share = window.DatasetStore.calculateZoneShare(rows);
             const zoneShareEl = $('#zoneShare');
@@ -1199,7 +1309,7 @@
                 const tv = minVal + i * ((maxVal - minVal) / 3);
                 const y = Y(tv);
                 gridHtml += `
-                    <line class="grid-line" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="rgba(255,255,255,0.06)" />
+                    <line class="grid-line" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="var(--chart-grid-line)" />
                     <text class="axis-text" x="${pad.l - 6}" y="${y + 3}" text-anchor="end" fill="var(--text-muted)" font-size="10">${Math.round(tv)}${Sec.escapeHTML(unit)}</text>
                 `;
             }
@@ -1209,9 +1319,9 @@
                 const y1 = Y(band[1]);
                 const y0 = Y(band[0]);
                 bandHtml = `
-                    <rect x="${pad.l}" y="${Math.min(y1, y0)}" width="${iw}" height="${Math.abs(y0 - y1)}" fill="rgba(59,130,246,0.06)" />
-                    <line x1="${pad.l}" y1="${y0}" x2="${w - pad.r}" y2="${y0}" stroke="rgba(244,63,94,0.4)" stroke-dasharray="3 3" />
-                    <line x1="${pad.l}" y1="${y1}" x2="${w - pad.r}" y2="${y1}" stroke="rgba(244,63,94,0.4)" stroke-dasharray="3 3" />
+                    <rect x="${pad.l}" y="${Math.min(y1, y0)}" width="${iw}" height="${Math.abs(y0 - y1)}" fill="var(--chart-band)" />
+                    <line x1="${pad.l}" y1="${y0}" x2="${w - pad.r}" y2="${y0}" stroke="var(--accent-rose-glow)" stroke-dasharray="3 3" />
+                    <line x1="${pad.l}" y1="${y1}" x2="${w - pad.r}" y2="${y1}" stroke="var(--accent-rose-glow)" stroke-dasharray="3 3" />
                 `;
             }
 
@@ -1275,13 +1385,13 @@
             }
 
             const dotsHtml = xs.map((xVal, i) => `
-                <circle cx="${X(xVal).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="3" fill="#3b82f6" opacity="0.65" />
+                <circle cx="${X(xVal).toFixed(1)}" cy="${Y(ys[i]).toFixed(1)}" r="3" fill="var(--accent-blue)" opacity="0.65" />
             `).join('');
 
             host.innerHTML = `
                 <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;overflow:hidden;">
-                    <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${h - pad.b}" stroke="rgba(255,255,255,0.1)" />
-                    <line x1="${pad.l}" y1="${h - pad.b}" x2="${w - pad.r}" y2="${h - pad.b}" stroke="rgba(255,255,255,0.1)" />
+                    <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${h - pad.b}" stroke="var(--chart-grid-line)" />
+                    <line x1="${pad.l}" y1="${h - pad.b}" x2="${w - pad.r}" y2="${h - pad.b}" stroke="var(--chart-grid-line)" />
                     <text x="${pad.l}" y="${pad.t - 4}" fill="var(--text-muted)" font-size="10">Udara (%)</text>
                     <text x="${w - pad.r}" y="${h - 8}" text-anchor="end" fill="var(--text-muted)" font-size="10">Suhu (${S.unit === 'F' ? '°F' : '°C'})</text>
                     ${dotsHtml}
@@ -1332,6 +1442,24 @@
                     freshEl.textContent = `${rel} (${window.DatasetStore.formatDateTime(latest.t)})`;
                 } else {
                     freshEl.textContent = 'OFFLINE / NO DATA';
+                }
+            }
+
+            const staleBadge = $('#badgeStaleData');
+            if (staleBadge) {
+                const S = window.ConfigStore.get();
+                const pollInterval = (S && Number.isFinite(S.poll) && S.poll > 0) ? S.poll : 2000;
+                const staleThreshold = 2 * pollInterval;
+                if (latest && Number.isFinite(latest.t)) {
+                    const ageMs = Date.now() - latest.t;
+                    if (ageMs > staleThreshold) {
+                        staleBadge.hidden = false;
+                        staleBadge.textContent = `Data basi (${this.formatRelativeAge(latest.t)})`;
+                    } else {
+                        staleBadge.hidden = true;
+                    }
+                } else {
+                    staleBadge.hidden = true;
                 }
             }
 
@@ -1714,6 +1842,22 @@
             const tUnit = S.unit === 'F' ? '°F' : '°C';
             const convTemp = S.unit === 'F' ? (v => (v * 9 / 5) + 32) : (v => v);
 
+            // Update KPI cards state classes (skeleton loading, empty state, error state)
+            const cards = [$('#cardMoisture'), $('#cardTemp'), $('#cardHumidity'), $('#cardPump')];
+            cards.forEach(card => {
+                if (!card) return;
+                card.classList.remove('is-loading', 'is-empty', 'is-error');
+                if (this.connectionState === 'error' || this.connectionState === 'disconnected') {
+                    card.classList.add('is-error');
+                    card.setAttribute('data-card-state', 'error');
+                } else if (!hasData) {
+                    card.classList.add('is-empty');
+                    card.setAttribute('data-card-state', 'empty');
+                } else {
+                    card.setAttribute('data-card-state', 'ready');
+                }
+            });
+
             // 1. Soil Moisture Card
             const soilVal = $('#valSoilMoisture');
             const soilBadge = $('#badgeSoilStatus');
@@ -1846,11 +1990,11 @@
                 this.lastPumpCommand = pumpCommand;
             }
 
-            // Mini sparklines
+            // Mini sparklines using CSS variable tokens
             if (hasData) {
-                this.renderMiniSparkline('sparkSoil', 'tanah', record.tanah < S.dry ? '#f43f5e' : '#10b981');
-                this.renderMiniSparkline('sparkAir', 'udara', '#3b82f6');
-                this.renderMiniSparkline('sparkTemp', 'suhu', '#f59e0b');
+                this.renderMiniSparkline('sparkSoil', 'tanah', record.tanah < S.dry ? 'var(--accent-rose)' : 'var(--accent-emerald)');
+                this.renderMiniSparkline('sparkAir', 'udara', 'var(--accent-blue)');
+                this.renderMiniSparkline('sparkTemp', 'suhu', 'var(--accent-amber)');
             } else {
                 ['sparkSoil', 'sparkAir', 'sparkTemp'].forEach(id => {
                     const el = $(`#${id}`);
@@ -2107,7 +2251,7 @@
                 const midY = h / 2;
                 wrap.innerHTML = `
                     <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
-                        <line class="grid-line" x1="${pad.left}" y1="${midY}" x2="${w - pad.right}" y2="${midY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="4 4" />
+                        <line class="grid-line" x1="${pad.left}" y1="${midY}" x2="${w - pad.right}" y2="${midY}" stroke="var(--chart-grid-line)" stroke-dasharray="4 4" />
                         <circle class="data-dot" cx="${w / 2}" cy="${midY}" r="6" />
                         <text class="axis-text" x="${w / 2}" y="${midY - 12}" text-anchor="middle">Tanah ${Math.round(r.tanah)}% · Udara ${Math.round(r.udara)}% · Suhu ${convTemp(r.suhu).toFixed(1)}${tUnit} (${window.DatasetStore.formatTime(r.t, true)})</text>
                         <text class="axis-text" x="${w / 2}" y="${h - 8}" text-anchor="middle">1 data poin aktual terekam</text>
@@ -2188,24 +2332,61 @@
 
             let pathsHtml = '';
             if (metric === 'all') {
-                const ptsSoil = rows.map((r, idx) => [getX(r.t, idx), getY(r.tanah)]);
-                const ptsAir = rows.map((r, idx) => [getX(r.t, idx), getY(r.udara)]);
-                const ptsTemp = rows.map((r, idx) => [getX(r.t, idx), getY(convTemp(r.suhu))]);
+                const showSoil = !this.activeSeries || this.activeSeries.tanah;
+                const showAir = !this.activeSeries || this.activeSeries.udara;
+                const showTemp = !this.activeSeries || this.activeSeries.suhu;
+                const showPump = !this.activeSeries || this.activeSeries.pompa;
 
-                const dSoil = 'M' + ptsSoil.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
-                const dAir = 'M' + ptsAir.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
-                const dTemp = 'M' + ptsTemp.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
-                const areaSoil = `${dSoil} L${ptsSoil[ptsSoil.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${ptsSoil[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+                let soilParts = '';
+                if (showSoil) {
+                    const ptsSoil = rows.map((r, idx) => [getX(r.t, idx), getY(r.tanah)]);
+                    const dSoil = 'M' + ptsSoil.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                    const areaSoil = `${dSoil} L${ptsSoil[ptsSoil.length - 1][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} L${ptsSoil[0][0].toFixed(1)},${(pad.top + innerH).toFixed(1)} Z`;
+                    soilParts = `
+                        <path d="${areaSoil}" fill="url(#emeraldGrad)" />
+                        <path d="${dSoil}" fill="none" stroke="var(--accent-emerald)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="${ptsSoil[ptsSoil.length - 1][0]}" cy="${ptsSoil[ptsSoil.length - 1][1]}" r="4" fill="var(--accent-emerald)" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
+                    `;
+                }
 
-                pathsHtml = `
-                    <path d="${areaSoil}" fill="url(#emeraldGrad)" />
-                    <path d="${dSoil}" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-                    <path d="${dAir}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    <path d="${dTemp}" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle cx="${ptsSoil[ptsSoil.length - 1][0]}" cy="${ptsSoil[ptsSoil.length - 1][1]}" r="4" fill="#10b981" stroke="#090d16" stroke-width="1.5" />
-                    <circle cx="${ptsAir[ptsAir.length - 1][0]}" cy="${ptsAir[ptsAir.length - 1][1]}" r="4" fill="#3b82f6" stroke="#090d16" stroke-width="1.5" />
-                    <circle cx="${ptsTemp[ptsTemp.length - 1][0]}" cy="${ptsTemp[ptsTemp.length - 1][1]}" r="4" fill="#f59e0b" stroke="#090d16" stroke-width="1.5" />
-                `;
+                let airParts = '';
+                if (showAir) {
+                    const ptsAir = rows.map((r, idx) => [getX(r.t, idx), getY(r.udara)]);
+                    const dAir = 'M' + ptsAir.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                    airParts = `
+                        <path d="${dAir}" fill="none" stroke="var(--accent-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="${ptsAir[ptsAir.length - 1][0]}" cy="${ptsAir[ptsAir.length - 1][1]}" r="4" fill="var(--accent-blue)" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
+                    `;
+                }
+
+                let tempParts = '';
+                if (showTemp) {
+                    const ptsTemp = rows.map((r, idx) => [getX(r.t, idx), getY(convTemp(r.suhu))]);
+                    const dTemp = 'M' + ptsTemp.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                    tempParts = `
+                        <path d="${dTemp}" fill="none" stroke="var(--accent-amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="${ptsTemp[ptsTemp.length - 1][0]}" cy="${ptsTemp[ptsTemp.length - 1][1]}" r="4" fill="var(--accent-amber)" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
+                    `;
+                }
+
+                let pumpParts = '';
+                if (showPump) {
+                    const ptsPump = [];
+                    rows.forEach((r, idx) => {
+                        const x = getX(r.t, idx);
+                        const pumpY = pad.top + innerH - (getPumpState(r) * (innerH * 0.18)) - 4;
+                        if (idx > 0) ptsPump.push([x, ptsPump[ptsPump.length - 1][1]]);
+                        ptsPump.push([x, pumpY]);
+                    });
+                    const dPump = 'M' + ptsPump.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
+                    const lastPumpPt = ptsPump[ptsPump.length - 1];
+                    pumpParts = `
+                        <path d="${dPump}" fill="none" stroke="var(--accent-rose)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 2" />
+                        <circle cx="${lastPumpPt[0]}" cy="${lastPumpPt[1]}" r="3.5" fill="var(--accent-rose)" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
+                    `;
+                }
+
+                pathsHtml = soilParts + airParts + tempParts + pumpParts;
             } else if (metric === 'pompa') {
                 const pts = [];
                 rows.forEach((r, idx) => {
@@ -2221,11 +2402,11 @@
                 const lastPt = pts[pts.length - 1];
                 pathsHtml = `
                     <path d="${areaStep}" fill="url(#roseGrad)" />
-                    <path d="${dStep}" fill="none" stroke="#f43f5e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" fill="#f43f5e" stroke="#090d16" stroke-width="1.5" />
+                    <path d="${dStep}" fill="none" stroke="var(--accent-rose)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" fill="var(--accent-rose)" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
                 `;
             } else {
-                const color = metric === 'tanah' ? '#10b981' : (metric === 'suhu' ? '#f59e0b' : '#3b82f6');
+                const color = metric === 'tanah' ? 'var(--accent-emerald)' : (metric === 'suhu' ? 'var(--accent-amber)' : 'var(--accent-blue)');
                 const gradId = metric === 'tanah' ? 'emeraldGrad' : (metric === 'suhu' ? 'amberGrad' : 'blueGradient');
                 const points = rows.map((r, idx) => [getX(r.t, idx), getY(metric === 'suhu' ? convTemp(r.suhu) : r[metric])]);
                 const pathD = 'M' + points.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('L');
@@ -2234,7 +2415,7 @@
                 pathsHtml = `
                     <path d="${areaD}" fill="url(#${gradId})" />
                     <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle class="data-dot" cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" style="fill:${color};" />
+                    <circle class="data-dot" cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" style="fill:${color};stroke:var(--chart-dot-stroke);" />
                 `;
             }
 
@@ -2242,27 +2423,27 @@
                 <svg id="overviewSvgChart" width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden; width:100%; height:100%; cursor:crosshair;">
                     <defs>
                         <linearGradient id="blueGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.32" />
-                            <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0" />
+                            <stop offset="0%" stop-color="var(--accent-blue)" stop-opacity="0.32" />
+                            <stop offset="100%" stop-color="var(--accent-blue)" stop-opacity="0.0" />
                         </linearGradient>
                         <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.28" />
-                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0" />
+                            <stop offset="0%" stop-color="var(--accent-emerald)" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="var(--accent-emerald)" stop-opacity="0.0" />
                         </linearGradient>
                         <linearGradient id="amberGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28" />
-                            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0" />
+                            <stop offset="0%" stop-color="var(--accent-amber)" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="var(--accent-amber)" stop-opacity="0.0" />
                         </linearGradient>
                         <linearGradient id="roseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.28" />
-                            <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.0" />
+                            <stop offset="0%" stop-color="var(--accent-rose)" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="var(--accent-rose)" stop-opacity="0.0" />
                         </linearGradient>
                     </defs>
                     ${gridHtml}
                     ${bandHtml}
                     ${timeLabelsHtml}
                     ${pathsHtml}
-                    <line id="overviewHoverLine" x1="0" y1="${pad.top}" x2="0" y2="${pad.top + innerH}" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-dasharray="3 3" style="display:none;" />
+                    <line id="overviewHoverLine" x1="0" y1="${pad.top}" x2="0" y2="${pad.top + innerH}" stroke="var(--chart-crosshair)" stroke-width="1.2" stroke-dasharray="3 3" style="display:none;" />
                 </svg>
                 <div id="chartTooltip" class="chart-tooltip" style="display:none;"></div>
             `;
@@ -2285,15 +2466,30 @@
                     }
                     const pumpOn = getPumpState(r) === 1;
                     tooltip.style.display = 'block';
-                    const leftPx = Math.min(Math.max(8, (xSvg / w) * rect.width - 90), Math.max(8, rect.width - 195));
+                    const tooltipWidth = 175;
+                    const leftPx = Math.min(Math.max(6, (xSvg / w) * rect.width - (tooltipWidth / 2)), Math.max(6, rect.width - tooltipWidth - 6));
                     tooltip.style.left = `${leftPx}px`;
                     tooltip.style.top = '10px';
+
+                    let ttRows = '';
+                    if (metric === 'all') {
+                        if (!this.activeSeries || this.activeSeries.tanah) ttRows += `<div class="tt-row"><span style="color:var(--accent-emerald);">● Tanah:</span> <b class="tabular-nums">${Math.round(r.tanah)}%</b></div>`;
+                        if (!this.activeSeries || this.activeSeries.udara) ttRows += `<div class="tt-row"><span style="color:var(--accent-blue);">● Udara:</span> <b class="tabular-nums">${Math.round(r.udara)}%</b></div>`;
+                        if (!this.activeSeries || this.activeSeries.suhu) ttRows += `<div class="tt-row"><span style="color:var(--accent-amber);">● Suhu:</span> <b class="tabular-nums">${convTemp(r.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b></div>`;
+                        if (!this.activeSeries || this.activeSeries.pompa) ttRows += `<div class="tt-row"><span style="color:var(--accent-rose);">● Pompa:</span> <b class="tabular-nums">${pumpOn ? 'ON' : 'OFF'}</b></div>`;
+                    } else if (metric === 'tanah') {
+                        ttRows += `<div class="tt-row"><span style="color:var(--accent-emerald);">● Tanah:</span> <b class="tabular-nums">${Math.round(r.tanah)}%</b></div>`;
+                    } else if (metric === 'udara') {
+                        ttRows += `<div class="tt-row"><span style="color:var(--accent-blue);">● Udara:</span> <b class="tabular-nums">${Math.round(r.udara)}%</b></div>`;
+                    } else if (metric === 'suhu') {
+                        ttRows += `<div class="tt-row"><span style="color:var(--accent-amber);">● Suhu:</span> <b class="tabular-nums">${convTemp(r.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b></div>`;
+                    } else if (metric === 'pompa') {
+                        ttRows += `<div class="tt-row"><span style="color:var(--accent-rose);">● Pompa/Relay:</span> <b class="tabular-nums">${pumpOn ? 'ON (Aktif)' : 'OFF (Siaga)'}</b></div>`;
+                    }
+
                     tooltip.innerHTML = `
                         <div class="tt-time tabular-nums">${Sec.escapeHTML(window.DatasetStore.formatDateTime(r.t))} WIB</div>
-                        <div class="tt-row"><span style="color:#10b981;">● Tanah:</span> <b class="tabular-nums">${Math.round(r.tanah)}%</b></div>
-                        <div class="tt-row"><span style="color:#3b82f6;">● Udara:</span> <b class="tabular-nums">${Math.round(r.udara)}%</b></div>
-                        <div class="tt-row"><span style="color:#f59e0b;">● Suhu:</span> <b class="tabular-nums">${convTemp(r.suhu).toFixed(1)}${Sec.escapeHTML(tUnit)}</b></div>
-                        <div class="tt-row"><span style="color:#f43f5e;">● Pompa/Relay:</span> <b class="tabular-nums">${pumpOn ? 'ON (Aktif)' : 'OFF (Siaga)'}</b></div>
+                        ${ttRows}
                     `;
                 };
                 const hideHover = () => {
@@ -2380,19 +2576,19 @@
                 <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
                     <defs>
                         <linearGradient id="pumpStepGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.3" />
-                            <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.02" />
+                            <stop offset="0%" stop-color="var(--accent-rose)" stop-opacity="0.3" />
+                            <stop offset="100%" stop-color="var(--accent-rose)" stop-opacity="0.02" />
                         </linearGradient>
                     </defs>
-                    <line x1="${pad.left}" y1="${getY(1)}" x2="${w - pad.right}" y2="${getY(1)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3" />
-                    <line x1="${pad.left}" y1="${getY(0)}" x2="${w - pad.right}" y2="${getY(0)}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3 3" />
-                    <text x="${pad.left - 6}" y="${getY(1) + 3}" fill="#f43f5e" font-size="9" font-family="var(--font-mono)" text-anchor="end">ON</text>
-                    <text x="${pad.left - 6}" y="${getY(0) + 3}" fill="#10b981" font-size="9" font-family="var(--font-mono)" text-anchor="end">OFF</text>
+                    <line x1="${pad.left}" y1="${getY(1)}" x2="${w - pad.right}" y2="${getY(1)}" stroke="var(--chart-grid-line)" stroke-dasharray="3 3" />
+                    <line x1="${pad.left}" y1="${getY(0)}" x2="${w - pad.right}" y2="${getY(0)}" stroke="var(--chart-grid-line)" stroke-dasharray="3 3" />
+                    <text x="${pad.left - 6}" y="${getY(1) + 3}" fill="var(--accent-rose)" font-size="9" font-family="var(--font-mono)" text-anchor="end">ON</text>
+                    <text x="${pad.left - 6}" y="${getY(0) + 3}" fill="var(--accent-emerald)" font-size="9" font-family="var(--font-mono)" text-anchor="end">OFF</text>
                     <text x="${pad.left}" y="${h - 5}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="start">${Sec.escapeHTML(window.DatasetStore.formatTime(t0, true))}</text>
                     <text x="${w - pad.right}" y="${h - 5}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="end">${Sec.escapeHTML(window.DatasetStore.formatTime(t1, true))}</text>
                     <path d="${areaStep}" fill="url(#pumpStepGrad)" />
-                    <path d="${dStep}" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle cx="${pts[pts.length - 1][0]}" cy="${pts[pts.length - 1][1]}" r="4" fill="${latestOn ? '#f43f5e' : '#10b981'}" stroke="#090d16" stroke-width="1.5" />
+                    <path d="${dStep}" fill="none" stroke="var(--accent-rose)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="${pts[pts.length - 1][0]}" cy="${pts[pts.length - 1][1]}" r="4" fill="${latestOn ? 'var(--accent-rose)' : 'var(--accent-emerald)'}" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
                 </svg>
             `;
         }

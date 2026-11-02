@@ -500,6 +500,11 @@
                     if (e.target === modalOverlay) this.closeDetailModal();
                 });
             }
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' || e.key === 'Esc') {
+                    this.closeDetailModal();
+                }
+            });
         }
 
         switchViewMode(mode) {
@@ -650,7 +655,7 @@
                 return `
                     <div class="gallery-card" data-img-id="${Sec.escapeHTML(r.image_id)}">
                         <div class="gallery-card-thumb">
-                            ${imgSrc ? `<img src="${Sec.escapeHTML(imgSrc)}" alt="${Sec.escapeHTML(r.image_id)}" loading="lazy">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#050811;color:var(--text-muted);font-size:11px;">Tidak Ada Gambar</div>'}
+                            ${imgSrc ? `<img src="${Sec.escapeHTML(imgSrc)}" alt="${Sec.escapeHTML(r.image_id)}" loading="lazy">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg-surface-sunken);color:var(--text-muted);font-size:11px;">Tidak Ada Gambar</div>'}
                             <span class="gallery-card-badge ${badgeClass}">${Sec.escapeHTML(statusText)}</span>
                         </div>
                         <div class="gallery-card-info">
@@ -732,8 +737,8 @@
                 return;
             }
 
-            this.renderGrowthSVGChart('growthWidthChart', valid, r => r.leaf_width_px, 'px', '#3b82f6');
-            this.renderGrowthSVGChart('growthAreaChart', valid, r => r.leaf_area_px, 'px²', '#10b981');
+            this.renderGrowthSVGChart('growthWidthChart', valid, r => r.leaf_width_px, 'px', 'var(--accent-blue)');
+            this.renderGrowthSVGChart('growthAreaChart', valid, r => r.leaf_area_px, 'px²', 'var(--accent-emerald)');
 
             if (valid.length < 2) {
                 this.renderEmptyChartState('growthRateChart', 'Memerlukan minimal 2 capture tervalidasi untuk menghitung laju');
@@ -743,7 +748,7 @@
                     const prev = arr[i - 1];
                     const dt = Math.max(0.01, (r.captured_at - prev.captured_at) / 86400000);
                     return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
-                }, 'px/hari', '#f59e0b');
+                }, 'px/hari', 'var(--accent-amber)');
             }
 
             // GDD from genuine microclimate telemetry if available
@@ -760,7 +765,7 @@
                     accGDD += dayHeat / 144; // 10-minute slot contribution
                     return Math.round(accGDD * 10) / 10;
                 });
-                this.renderGrowthSVGChart('growthGddChart', valid, (r, i) => gddData[i], '°C·h', '#3b82f6');
+                this.renderGrowthSVGChart('growthGddChart', valid, (r, i) => gddData[i], '°C·h', 'var(--accent-blue)');
             }
         }
 
@@ -826,11 +831,11 @@
                 dashGrowthBadge.className = 'badge-tag emerald tabular-nums';
             }
             if (dashGrowthWrap) {
-                this.renderGrowthSVGChart('dashGrowthChartWrap', valid, r => r.leaf_width_px, 'px', '#10b981');
+                this.renderGrowthSVGChart('dashGrowthChartWrap', valid, r => r.leaf_width_px, 'px', 'var(--accent-emerald)');
             }
 
-            this.renderGrowthSVGChart('miniChartWidth', valid, r => r.leaf_width_px, 'px', '#3b82f6');
-            this.renderGrowthSVGChart('miniChartArea', valid, r => r.leaf_area_px, 'px²', '#10b981');
+            this.renderGrowthSVGChart('miniChartWidth', valid, r => r.leaf_width_px, 'px', 'var(--accent-blue)');
+            this.renderGrowthSVGChart('miniChartArea', valid, r => r.leaf_area_px, 'px²', 'var(--accent-emerald)');
 
             if (valid.length < 2) {
                 this.renderEmptyChartState('miniChartGrowthRate', 'Min. 2 titik');
@@ -840,7 +845,7 @@
                     const prev = arr[i - 1];
                     const dt = Math.max(0.01, (r.captured_at - prev.captured_at) / 86400000);
                     return Math.max(0, Math.round(((r.leaf_width_px - prev.leaf_width_px) / dt) * 10) / 10);
-                }, 'px/h', '#f59e0b');
+                }, 'px/h', 'var(--accent-amber)');
             }
 
             const teleRecords = (window.DatasetStore ? window.DatasetStore.getAll() : []).filter(r => Number.isFinite(r.suhu));
@@ -853,7 +858,7 @@
                     accGDD += Math.max(0, match.suhu - 4.0) / 144;
                     return Math.round(accGDD * 10) / 10;
                 });
-                this.renderGrowthSVGChart('miniChartGDD', valid, (r, i) => gddData[i], '°C·h', '#3b82f6');
+                this.renderGrowthSVGChart('miniChartGDD', valid, (r, i) => gddData[i], '°C·h', 'var(--accent-blue)');
             }
         }
 
@@ -875,8 +880,8 @@
                 const singleY = pad.top + innerH / 2;
                 el.innerHTML = `
                     <svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block; overflow:hidden;">
-                        <line x1="${pad.left}" y1="${singleY}" x2="${w - pad.right}" y2="${singleY}" stroke="rgba(255,255,255,0.08)" stroke-dasharray="2 2" />
-                        <circle cx="${w / 2}" cy="${singleY}" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.5" />
+                        <line x1="${pad.left}" y1="${singleY}" x2="${w - pad.right}" y2="${singleY}" stroke="var(--chart-grid-line)" stroke-dasharray="2 2" />
+                        <circle cx="${w / 2}" cy="${singleY}" r="4.5" fill="${color}" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
                         <text x="${w / 2}" y="${singleY - 10}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="middle">${values[0]} ${unit}</text>
                     </svg>
                 `;
@@ -898,13 +903,13 @@
                             <stop offset="100%" stop-color="${color}" stop-opacity="0.0" />
                         </linearGradient>
                     </defs>
-                    <line x1="${pad.left}" y1="${pad.top}" x2="${w - pad.right}" y2="${pad.top}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="2 2" />
-                    <line x1="${pad.left}" y1="${pad.top + innerH}" x2="${w - pad.right}" y2="${pad.top + innerH}" stroke="rgba(255,255,255,0.05)" stroke-dasharray="2 2" />
+                    <line x1="${pad.left}" y1="${pad.top}" x2="${w - pad.right}" y2="${pad.top}" stroke="var(--chart-grid-line)" stroke-dasharray="2 2" />
+                    <line x1="${pad.left}" y1="${pad.top + innerH}" x2="${w - pad.right}" y2="${pad.top + innerH}" stroke="var(--chart-grid-line)" stroke-dasharray="2 2" />
                     <text x="${pad.left - 4}" y="${pad.top + 8}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="end">${Math.round(maxVal)}</text>
                     <text x="${pad.left - 4}" y="${pad.top + innerH}" fill="var(--text-muted)" font-size="9" font-family="var(--font-mono)" text-anchor="end">${Math.round(minVal)}</text>
                     <path d="${areaD}" fill="url(#grad_${elementId})" />
                     <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                    <circle cx="${points[points.length - 1][0]}" cy="${points[points.length - 1][1]}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.5" />
+                    <circle cx="${points[points.length - 1][0]}" cy="${points[points.length - 1][1]}" r="3.5" fill="${color}" stroke="var(--chart-dot-stroke)" stroke-width="1.5" />
                 </svg>
             `;
         }
