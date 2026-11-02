@@ -255,6 +255,7 @@ class LettuceCVPipeline:
             leaf_area_mm2 = round(measurements["leaf_area_px"] * (self.calib_factor ** 2), 2)
 
         record = {
+            "kelompok": "Kelompok 5",
             "image_id": image_id,
             "plant_id": plant_id,
             "captured_at": now_ts,

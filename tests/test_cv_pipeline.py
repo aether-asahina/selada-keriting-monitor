@@ -18,7 +18,8 @@ from datetime import datetime, timezone, timedelta
 # Import modules from scripts
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts')))
 from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE
-from scheduler_daemon import LeafGrowthScheduler
+from scheduler_daemon import LeafGrowthScheduler, compute_fnv1a_hex
+import io
 
 def _create_unit_test_image(width=320, height=240, has_plant=True, is_dark=False, is_blur=False):
     """
@@ -190,6 +191,39 @@ class TestSchedulerDaemon(unittest.TestCase):
         self.assertEqual(rec["leaf_area_px"], 0)
         self.assertIsNone(rec["leaf_width_mm"])
         self.assertIn(slot_key, self.scheduler.executed_slots)
+
+    def test_ingest_synced_photo_confirms_valid_fnv1a_and_rejects_mismatch(self):
+        img = _create_unit_test_image(width=320, height=240, has_plant=True)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        raw_bytes = buf.getvalue()
+        valid_checksum = compute_fnv1a_hex(raw_bytes)
+
+        # 1. Mismatched checksum must be rejected (confirmed=False so ESP32-CAM retains local SD file)
+        bad_res = self.scheduler.ingest_synced_photo(
+            raw_bytes=raw_bytes,
+            slot_key="2026-11-02_08:00",
+            captured_at_ms=1762045200000,
+            hst_day=10,
+            expected_checksum="deadbeef",
+            expected_size=len(raw_bytes)
+        )
+        self.assertFalse(bad_res["ok"])
+        self.assertFalse(bad_res["confirmed"])
+
+        # 2. Valid checksum & size must process 1 photo and return confirmed=True
+        ok_res = self.scheduler.ingest_synced_photo(
+            raw_bytes=raw_bytes,
+            slot_key="2026-11-02_08:00",
+            captured_at_ms=1762045200000,
+            hst_day=10,
+            expected_checksum=valid_checksum,
+            expected_size=len(raw_bytes)
+        )
+        self.assertTrue(ok_res["ok"])
+        self.assertTrue(ok_res["confirmed"])
+        self.assertEqual(ok_res["checksum_fnv1a"], valid_checksum)
+        self.assertIn("2026-11-02_08:00", self.scheduler.executed_slots)
 
 
 if __name__ == "__main__":

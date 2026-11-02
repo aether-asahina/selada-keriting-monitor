@@ -159,6 +159,8 @@
 
     const DEF_SETTINGS = {
         firebase: 'https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/',
+        firebaseNode: 'kelompok5',
+        groupName: 'Kelompok 5',
         poll: 2000,
         fetchN: 300,
         unit: 'C',
@@ -309,21 +311,51 @@
         }
 
         /**
-         * Validates and normalizes raw telemetry records
+         * Parses numeric or WIB string timestamps ("YYYY-MM-DD HH:mm:ss") into epoch ms
+         */
+        parseFlexibleTimestamp(rawTs, keyOrTimestamp) {
+            if (typeof rawTs === 'number' && Number.isFinite(rawTs) && rawTs > 1e11) {
+                return rawTs;
+            }
+            if (typeof rawTs === 'string' && rawTs.trim()) {
+                const s = rawTs.trim();
+                if (/^\d{10,13}$/.test(s)) {
+                    const n = Number(s);
+                    return s.length === 10 ? n * 1000 : n;
+                }
+                const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+                if (isoMatch) {
+                    const parsedWib = Date.parse(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T${isoMatch[4]}:${isoMatch[5]}:${isoMatch[6]}+07:00`);
+                    if (Number.isFinite(parsedWib)) return parsedWib;
+                }
+                const fallbackParse = Date.parse(s);
+                if (Number.isFinite(fallbackParse)) return fallbackParse;
+            }
+            if (typeof keyOrTimestamp === 'number' && Number.isFinite(keyOrTimestamp)) {
+                return keyOrTimestamp;
+            }
+            return decodePushTimestamp(keyOrTimestamp) || Date.now();
+        }
+
+        /**
+         * Validates and normalizes raw telemetry records (supports Kelompok 5 Indonesian & English schemas)
          */
         normalizeRecord(obj, keyOrTimestamp, source = 'live') {
             if (!obj || typeof obj !== 'object') return null;
 
-            const explicitTime = Number(obj.timestamp) || Number(obj.t) || null;
-            const decodedTime = explicitTime || (typeof keyOrTimestamp === 'number'
-                ? keyOrTimestamp
-                : (decodePushTimestamp(keyOrTimestamp) || Date.now()));
+            const rawTs = obj.timestamp !== undefined ? obj.timestamp : obj.t;
+            const decodedTime = this.parseFlexibleTimestamp(rawTs, keyOrTimestamp);
             const validatedTime = SecurityUtils.validateTimestamp(decodedTime, Date.now());
 
+            // Support both Kelompok 5 Indonesian schema and standard English RTDB schema
+            const rawSuhu = obj.suhu !== undefined ? obj.suhu : obj.temperature;
+            const rawUdara = obj.kelembapan_udara !== undefined ? obj.kelembapan_udara : obj.humidity;
+            const rawTanah = obj.kelembapan_tanah !== undefined ? obj.kelembapan_tanah : obj.soil;
+
             // Sensor physical boundary checks for Selada Keriting (Lactuca sativa L.)
-            const suhu = SecurityUtils.validateNumber(obj.suhu, 0, 55, null);
-            const udara = SecurityUtils.validateNumber(obj.kelembapan_udara, 5, 100, null);
-            const tanah = SecurityUtils.validateNumber(obj.kelembapan_tanah, 0, 100, null);
+            const suhu = SecurityUtils.validateNumber(rawSuhu, 0, 55, null);
+            const udara = SecurityUtils.validateNumber(rawUdara, 5, 100, null);
+            const tanah = SecurityUtils.validateNumber(rawTanah, 0, 100, null);
 
             // If key telemetry fields are missing/corrupted, reject to prevent chart/stat poisoning
             if (tanah === null || udara === null || suhu === null) {
@@ -335,6 +367,7 @@
             if (obj.relay !== undefined) relayFeedback = Boolean(obj.relay);
             else if (obj.pompa !== undefined) relayFeedback = Boolean(obj.pompa);
             else if (obj.status_relay !== undefined) relayFeedback = Boolean(obj.status_relay);
+            else if (obj.pump !== undefined) relayFeedback = Boolean(obj.pump);
 
             return {
                 id: typeof keyOrTimestamp === 'string' ? SecurityUtils.escapeHTML(keyOrTimestamp) : 'rec_' + validatedTime,
@@ -343,6 +376,7 @@
                 udara: Math.round(udara),
                 tanah: Math.round(tanah),
                 statusRaw: SecurityUtils.escapeHTML(obj.status || ''),
+                kelompok: SecurityUtils.escapeHTML(obj.kelompok || 'Kelompok 5'),
                 source: source, // 'live' | 'cache'
                 relayActual: relayFeedback // Verified relay feedback or null if unmeasured
             };
@@ -352,17 +386,18 @@
             if (!json || typeof json !== 'object') return [];
 
             // Single object payload
-            if (json.suhu !== undefined && json.kelembapan_tanah !== undefined) {
+            if ((json.suhu !== undefined && json.kelembapan_tanah !== undefined) ||
+                (json.temperature !== undefined && json.soil !== undefined)) {
                 const norm = this.normalizeRecord(json, Date.now(), source);
                 return norm ? [norm] : [];
             }
 
             const rowMap = new Map();
 
-            // 1. Extract nested 'kelompok2' records if present
-            if (json.kelompok2 && typeof json.kelompok2 === 'object') {
-                for (const key of Object.keys(json.kelompok2)) {
-                    const item = json.kelompok2[key];
+            // 1. Extract nested 'kelompok5' records if present (Primary Kelompok 5 node)
+            if (json.kelompok5 && typeof json.kelompok5 === 'object') {
+                for (const key of Object.keys(json.kelompok5)) {
+                    const item = json.kelompok5[key];
                     if (item && typeof item === 'object') {
                         const parsed = this.normalizeRecord(item, key, source);
                         if (parsed) rowMap.set(parsed.t, parsed);
@@ -370,9 +405,25 @@
                 }
             }
 
-            // 2. Extract root-level push records (ignoring non-telemetry nodes like 'kelompok2' and 'settings')
+            // 2. Extract nested 'history' and 'current' records if present on root RTDB
+            if (json.history && typeof json.history === 'object') {
+                for (const key of Object.keys(json.history)) {
+                    const item = json.history[key];
+                    if (item && typeof item === 'object') {
+                        const parsed = this.normalizeRecord(item, key, source);
+                        if (parsed) rowMap.set(parsed.t, parsed);
+                    }
+                }
+            }
+            if (json.current && typeof json.current === 'object') {
+                const parsedCur = this.normalizeRecord(json.current, 'current', source);
+                if (parsedCur) rowMap.set(parsedCur.t, parsedCur);
+            }
+
+            // 3. Extract root-level push records (ignoring non-telemetry nodes)
+            const NON_RECORD_KEYS = new Set(['kelompok5', 'history', 'current', 'settings', 'cam_status']);
             for (const key of Object.keys(json)) {
-                if (key === 'kelompok2' || key === 'settings') continue;
+                if (NON_RECORD_KEYS.has(key)) continue;
                 const item = json[key];
                 if (item && typeof item === 'object') {
                     const parsed = this.normalizeRecord(item, key, source);

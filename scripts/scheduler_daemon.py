@@ -142,6 +142,7 @@ class LeafGrowthScheduler:
         image_id = f"err_{dt_wib.strftime('%Y%m%d_%H%M%S')}"
 
         record = {
+            "kelompok": "Kelompok 5",
             "image_id": image_id,
             "plant_id": self.cfg["plant_id"],
             "captured_at": now_ts,
@@ -200,6 +201,69 @@ class LeafGrowthScheduler:
         self._log(f"Slot {slot_key} completed successfully: Width={res['leaf_width_px']}px, Area={res['leaf_area_px']}px2, QC={res['quality_status']}")
         return res
 
+    @staticmethod
+    def compute_fnv1a_hex(data_bytes):
+        """Computes 32-bit FNV-1a hash matching ESP32-CAM firmware implementation."""
+        h = 2166136261
+        for b in data_bytes:
+            h ^= b
+            h = (h * 16777619) & 0xFFFFFFFF
+        return f"{h:08x}"
+
+    def ingest_synced_photo(self, raw_bytes, file_name="", expected_size=None, expected_fnv1a=None, expected_checksum=None, captured_at=None, captured_at_ms=None, slot_key=None, hst_day=1):
+        """
+        Validates and processes a single deferred-sync JPEG from ESP32-CAM microSD.
+        Returns a confirmation dictionary with confirmed=True ONLY when validation and
+        storage succeed, ensuring ESP32-CAM never deletes unverified local files.
+        """
+        if not raw_bytes or not isinstance(raw_bytes, (bytes, bytearray)) or len(raw_bytes) < 64:
+            return {"ok": False, "confirmed": False, "error": "Empty or truncated payload"}
+
+        actual_size = len(raw_bytes)
+        if expected_size is not None and int(expected_size) != actual_size:
+            return {"ok": False, "confirmed": False, "error": f"Size mismatch: expected {expected_size}, got {actual_size}"}
+
+        target_checksum = expected_fnv1a or expected_checksum
+        actual_fnv1a = self.compute_fnv1a_hex(raw_bytes)
+        if target_checksum and str(target_checksum).lower() != actual_fnv1a:
+            return {"ok": False, "confirmed": False, "error": f"FNV1a checksum mismatch: expected {target_checksum}, got {actual_fnv1a}"}
+
+        try:
+            pil_img = Image.open(BytesIO(raw_bytes)).convert("RGB")
+        except Exception as e:
+            return {"ok": False, "confirmed": False, "error": f"Invalid image encoding: {e}"}
+
+        now_wib = self.get_wib_now()
+        raw_ts = captured_at if captured_at is not None else captured_at_ms
+        ts_ms = int(raw_ts) if (raw_ts and int(raw_ts) > 1577836800000) else int(now_wib.timestamp() * 1000)
+        dt_wib = datetime.fromtimestamp(ts_ms / 1000.0, tz=WIB_TIMEZONE)
+        resolved_slot = slot_key or self.get_slot_key(dt_wib)
+
+        res = self.pipeline.process_image(
+            input_image=pil_img,
+            plant_id=self.cfg["plant_id"],
+            hst_day=int(hst_day) if hst_day else 1,
+            timestamp=ts_ms,
+            camera_id=self.cfg["camera_id"]
+        )
+        res["sync_source"] = "microSD_deferred_sync"
+        res["sd_file_name"] = str(file_name or "")
+        res["fnv1a"] = actual_fnv1a
+        self.executed_slots.add(resolved_slot)
+        self._log(f"Synced microSD photo confirmed ({file_name}): slot={resolved_slot}, image_id={res['image_id']}, size={actual_size}B")
+
+        return {
+            "ok": True,
+            "confirmed": True,
+            "kelompok": "Kelompok 5",
+            "slot_key": resolved_slot,
+            "image_id": res["image_id"],
+            "file_size": actual_size,
+            "fnv1a": actual_fnv1a,
+            "checksum_fnv1a": actual_fnv1a,
+            "quality_status": res["quality_status"]
+        }
+
     def print_status(self):
         """Prints campaign execution status report."""
         meta_file = self.cfg["metadata_path"]
@@ -250,6 +314,9 @@ class LeafGrowthScheduler:
             except Exception as e:
                 self._log(f"Unexpected error in daemon loop: {e}", "ERROR")
                 time.sleep(poll_interval_sec)
+
+
+compute_fnv1a_hex = LeafGrowthScheduler.compute_fnv1a_hex
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Automated 10-Minute Lettuce Growth Scheduler Daemon")

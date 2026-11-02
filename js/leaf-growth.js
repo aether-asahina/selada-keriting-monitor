@@ -44,6 +44,16 @@
             this.capturedSlotKeys = new Set();
             this.listeners = [];
             this.isCapturing = false;
+            this.sdStatus = {
+                reachable: false,
+                mounted: null,
+                sdFull: false,
+                freeMb: null,
+                totalMb: null,
+                pendingQueue: null,
+                syncedCount: null,
+                lastSlot: ''
+            };
 
             this.init();
         }
@@ -230,8 +240,79 @@
             const S = window.ConfigStore ? window.ConfigStore.get() : {};
             const camHost = (S.camIp || '').trim();
             if (camHost && window.SecurityUtils && window.SecurityUtils.isValidCameraHost(camHost)) {
+                await this.pollCameraNodeStatus(camHost);
                 await this.executeAutomatedCapture(currentSlotKey);
+            } else {
+                this.sdStatus.reachable = false;
+                this.renderStorageAndSyncStatus();
             }
+        }
+
+        async pollCameraNodeStatus(camHost) {
+            if (!camHost || !window.SecurityUtils || !window.SecurityUtils.isValidCameraHost(camHost)) {
+                this.sdStatus.reachable = false;
+                this.renderStorageAndSyncStatus();
+                return null;
+            }
+            try {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 3500);
+                const res = await fetch(`http://${camHost}/status?t=${Date.now()}`, { signal: controller.signal });
+                clearTimeout(timer);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.sdStatus = {
+                        reachable: true,
+                        mounted: Boolean(data.sd_mounted),
+                        sdFull: Boolean(data.sd_full),
+                        freeMb: Number.isFinite(Number(data.sd_free_mb)) ? Number(data.sd_free_mb) : null,
+                        totalMb: Number.isFinite(Number(data.sd_total_mb)) ? Number(data.sd_total_mb) : null,
+                        pendingQueue: Number.isFinite(Number(data.pending_queue)) ? Number(data.pending_queue) : 0,
+                        syncedCount: Number.isFinite(Number(data.synced)) ? Number(data.synced) : 0,
+                        lastSlot: String(data.last_slot || '')
+                    };
+                    this.renderStorageAndSyncStatus();
+                    return this.sdStatus;
+                }
+            } catch (_) {
+                this.sdStatus.reachable = false;
+            }
+            this.renderStorageAndSyncStatus();
+            return null;
+        }
+
+        renderStorageAndSyncStatus() {
+            const S = window.ConfigStore ? window.ConfigStore.get() : {};
+            const camHost = (S.camIp || '').trim();
+
+            const sdElList = [document.getElementById('dashSdStorageVal'), document.getElementById('growthSdStorageStatus'), document.getElementById('camSdStorageStatus')];
+            const sdSubEl = document.getElementById('dashSdStorageSub');
+            const syncElList = [document.getElementById('dashSyncQueueVal'), document.getElementById('growthSyncQueueStatus'), document.getElementById('camSyncQueueStatus')];
+            const syncSubEl = document.getElementById('dashSyncQueueSub');
+
+            if (!this.sdStatus.reachable) {
+                const sdLabel = camHost ? 'OFFLINE (Kamera Tidak Terjangkau)' : 'NOT AVAILABLE (IP Kamera Kosong)';
+                const syncLabel = 'Siaga Mandiri (Spooler microSD)';
+                sdElList.forEach(el => { if (el) el.textContent = sdLabel; });
+                if (sdSubEl) sdSubEl.textContent = 'Jadwal 10 menit (07:00–16:50 WIB) tetap tersimpan ke microSD pada ESP32-CAM tanpa Wi-Fi';
+                syncElList.forEach(el => { if (el) el.textContent = syncLabel; });
+                if (syncSubEl) syncSubEl.textContent = 'Sinkronisasi 1 foto/siklus + konfirmasi server saat Wi-Fi aktif';
+                return;
+            }
+
+            const sdText = !this.sdStatus.mounted
+                ? 'MICROSD TIDAK TERDETEKSI'
+                : (this.sdStatus.sdFull
+                    ? 'PENUH (< 4 MB Cadangan)'
+                    : `TERSEDIA (${this.sdStatus.freeMb ?? '—'} / ${this.sdStatus.totalMb ?? '—'} MB Bebas)`);
+            const syncText = this.sdStatus.pendingQueue > 0
+                ? `${this.sdStatus.pendingQueue} Foto Menunggu Sinkronisasi`
+                : `TERSINKRON (${this.sdStatus.syncedCount ?? 0} Terkonfirmasi)`;
+
+            sdElList.forEach(el => { if (el) el.textContent = sdText; });
+            if (sdSubEl) sdSubEl.textContent = this.sdStatus.mounted ? 'Mode SD_MMC 1-Bit · Buffer 1 Frame PSRAM' : 'Periksa kartu microSD pada slot ESP32-CAM';
+            syncElList.forEach(el => { if (el) el.textContent = syncText; });
+            if (syncSubEl) syncSubEl.textContent = 'Hapus file lokal hanya setelah konfirmasi FNV-1a server';
         }
 
         async executeAutomatedCapture(slotKey) {
@@ -515,11 +596,20 @@
             const elValid = document.getElementById('growthValidCount');
             const elPct = document.getElementById('growthTargetPct');
             const elFailed = document.getElementById('growthFailedCount');
+            const elProgFill = document.getElementById('growthProgressBarFill');
+            const elSlotsFill = document.getElementById('growthSlotsProgressFill');
+            const elSlotsText = document.getElementById('growthSlotsCountText');
 
             if (elValid) elValid.textContent = `${stats.validCount} / ${stats.targetValid}`;
             if (elPct) elPct.textContent = `${stats.targetPct}% Target Terpenuhi`;
             if (elFailed) elFailed.textContent = stats.failedCount;
+            if (elProgFill) elProgFill.style.width = `${stats.targetPct}%`;
 
+            const slotsPct = Math.min(100, Math.round((stats.totalCaptured / stats.totalSlots) * 100));
+            if (elSlotsFill) elSlotsFill.style.width = `${slotsPct}%`;
+            if (elSlotsText) elSlotsText.textContent = `${stats.totalCaptured} / ${stats.totalSlots} Slot Dieksekusi (${slotsPct}%)`;
+
+            this.renderStorageAndSyncStatus();
             this.renderGallery();
             this.renderGrowthCharts();
         }

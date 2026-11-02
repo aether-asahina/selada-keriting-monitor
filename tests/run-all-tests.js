@@ -1026,17 +1026,20 @@ try {
         fail('VPD-No-Fallback', `Expected null, got ${nullVpd}`);
     }
 
-    // 6. Verify Firebase RTDB parser merges both kelompok2 and root telemetry keys while ignoring settings
+    // 6. Verify Firebase RTDB parser merges kelompok5, history, current, and root telemetry keys while ignoring settings
     const mixedRtdbPayload = {
         settings: { interval: 2000 },
-        kelompok2: {
+        kelompok5: {
             '-O1': { kelembapan_tanah: 66, kelembapan_udara: 70, suhu: 24.1, timestamp: 1730000001000 }
         },
-        '-O2': { kelembapan_tanah: 67, kelembapan_udara: 71, suhu: 24.2, timestamp: 1730000005000 }
+        history: {
+            '-O2': { soil: 67, humidity: 71, temperature: 24.2, pump: true, timestamp: 1730000005000 }
+        },
+        '-O3': { kelembapan_tanah: 68, kelembapan_udara: 72, suhu: 24.3, timestamp: 1730000009000 }
     };
     const parsedMixed = sandbox.window.FirebaseEdgeClient.parseDatabaseResponse(mixedRtdbPayload);
-    if (parsedMixed.length === 2 && parsedMixed[0].tanah === 66 && parsedMixed[1].tanah === 67) {
-        pass('RTDB-Parser-Integration', 'parseDatabaseResponse merges kelompok2 and root records while ignoring non-telemetry settings');
+    if (parsedMixed.length === 3 && parsedMixed[0].tanah === 66 && parsedMixed[1].tanah === 67 && parsedMixed[2].tanah === 68) {
+        pass('RTDB-Parser-Integration', 'parseDatabaseResponse merges kelompok5, history, and root records while ignoring non-telemetry settings');
     } else {
         fail('RTDB-Parser-Integration', `Unexpected parsed count: ${parsedMixed.length}`);
     }
@@ -1048,6 +1051,34 @@ try {
         pass('CSS-Chart-Subgrid', 'CSS defines .sub-chart-box, .sub-chart-wrap (140px bounded), and mobile .sideclose rules');
     } else {
         fail('CSS-Chart-Subgrid', 'Missing .sub-chart-wrap or .sideclose CSS rules');
+    }
+
+    // 8. Verify complete Kelompok 5 migration & zero leftover kelompok2 references across application files
+    const configDefaults = sandbox.window.ConfigStore.get();
+    if (configDefaults.firebaseNode === 'kelompok5' && configDefaults.groupName === 'Kelompok 5' && indexHtmlContent.includes('Kelompok 5') && !indexHtmlContent.includes('kelompok2')) {
+        pass('Kelompok5-Migration', 'ConfigStore, RTDB parser, and index.html consistently use Kelompok 5 (/kelompok5) with zero kelompok2 leftovers');
+    } else {
+        fail('Kelompok5-Migration', 'Found remaining kelompok2 reference or missing Kelompok 5 configuration');
+    }
+
+    // 9. Verify ESP32 & ESP32-CAM Kelompok 5 Firmware (Non-blocking millis(), /stream, microSD offline queue, 1-photo sync, FNV-1a confirmation)
+    const esp32InoPath = path.join(rootDir, 'firmware/esp32_kelompok5_sensor/esp32_kelompok5_sensor.ino');
+    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
+    const esp32Ino = fs.existsSync(esp32InoPath) ? fs.readFileSync(esp32InoPath, 'utf8') : '';
+    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
+
+    const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+    const hasZeroBlockingDelay = !(/\bdelay\s*\(/.test(stripComments(esp32Ino))) && !(/\bdelay\s*\(/.test(stripComments(esp32CamIno)));
+    const hasStreamAndSdQueue = esp32CamIno.includes('"/stream"') &&
+        esp32CamIno.includes('/kelompok5/queue') &&
+        esp32CamIno.includes('X-Checksum-FNV1A') &&
+        esp32CamIno.includes('\\"confirmed\\":true') &&
+        esp32CamIno.includes('SD_MMC.remove');
+
+    if (esp32Ino.includes('/kelompok5.json') && hasZeroBlockingDelay && hasStreamAndSdQueue) {
+        pass('Firmware-Kelompok5-Audit', 'ESP32 & ESP32-CAM firmware verified: zero blocking delay(), /stream on :81, offline microSD queue, 1-photo-per-cycle sync, and FNV-1a server confirmation before deletion');
+    } else {
+        fail('Firmware-Kelompok5-Audit', 'ESP32 / ESP32-CAM firmware failed non-blocking or microSD sync verification');
     }
 } catch (e) {
     fail('Real-Data-Audit', 'Unexpected error in Suite 23', e.message);

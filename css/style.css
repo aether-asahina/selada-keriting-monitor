@@ -1799,107 +1799,111 @@ pre {
     box-shadow: 0 0 0 2px var(--accent-blue-subtle);
 }
 
-/* Toast Container (Anti-AI-Slop Micro Toasts) */
-.toast-container {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 100;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    pointer-events: none;
-}
-
-.toast {
-    pointer-events: auto;
-    background-color: var(--bg-surface-elevated);
-    border: 1px solid var(--border-subtle);
-    border-left: 3px solid var(--accent-blue);
-    border-radius: var(--radius-sm);
-    padding: 10px 16px;
-    color: var(--text-primary);
-    font-size: 12px;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+/* ================= LIVE CAMERA INLINE IP & MICROSD SYNC GRID ================= */
+.cam-inline-ip-bar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    animation: toastSlideIn 200ms cubic-bezier(0, 0, 0.2, 1);
-    transition: opacity 200ms ease, transform 200ms ease;
-}
-
-.toast.emerald { border-left-color: var(--accent-emerald); }
-.toast.rose { border-left-color: var(--accent-rose); }
-.toast.amber { border-left-color: var(--accent-amber); }
-
-@keyframes toastSlideIn {
-    from { transform: translateY(12px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-/* Skeleton Shimmer (Anti-AI-Slop Standard) */
-.skeleton-shimmer {
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 75%);
-    background-size: 200% 100%;
-    animation: shimmerPulse 1.8s infinite ease-in-out;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background-color: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
 }
 
-@keyframes shimmerPulse {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+.cam-ip-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
 
-/* Responsive Media Queries */
-@media (max-width: 960px) {
-    .app-sidebar {
-        transform: translateX(-100%);
-    }
+.cam-ip-input {
+    flex: 1;
+    min-width: 120px;
+    background-color: var(--bg-canvas);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    outline: none;
+}
 
-    .app-sidebar.open {
-        transform: translateX(0);
-        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.7);
-    }
+.cam-ip-input:focus {
+    border-color: var(--accent-emerald);
+}
 
-    .mobile-header {
-        display: flex;
-    }
+.cam-hw-status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
 
-    .app-main {
-        margin-left: 0;
-        padding: calc(var(--header-height) + 16px) 16px 48px;
-    }
+.cam-hw-status-item {
+    background-color: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
 
-    .metrics-grid {
+.cam-hw-status-item .hw-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.cam-hw-status-item .hw-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.cam-hw-status-item .hw-sub {
+    font-size: 10px;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.growth-campaign-banner {
+    margin-bottom: 16px;
+}
+
+.dual-progress-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.progress-block {
+    background-color: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+}
+
+.progress-fill.blue {
+    background: linear-gradient(90deg, var(--accent-blue), #38bdf8);
+}
+
+@media (max-width: 768px) {
+    .cam-hw-status-grid,
+    .dual-progress-grid {
         grid-template-columns: 1fr;
     }
-
-    .pred-forecast-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
 }
 
-@media (max-width: 600px) {
-    .pred-forecast-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .banner-row {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .chart-controls {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .toast-container {
-        left: 16px;
-        right: 16px;
-        bottom: 16px;
-    }
-}
 
 
 /* ================= KPI CARDS GRID ================= */

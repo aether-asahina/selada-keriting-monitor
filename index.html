@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Selada Keriting Monitor · Telemetri Presisi, Computer Vision & Agronomi</title>
+    <title>Selada Keriting Monitor · Kelompok 5 · Telemetri Presisi, Computer Vision & Agronomi</title>
     
     <!-- Preconnect & Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,8 +26,8 @@
                 </svg>
             </button>
             <div class="brand-info">
-                <h1 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2;">Selada Keriting Monitor</h1>
-                <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Greenhouse Hydroponic A-01</p>
+                <h1 style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 0; line-height: 1.2;">Selada Keriting · Kelompok 5</h1>
+                <p style="font-size: 10px; color: var(--text-muted); margin: 0;">Greenhouse Hydroponic · Node /kelompok5</p>
             </div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -53,7 +53,7 @@
                 </div>
                 <div class="brand-info">
                     <span class="title-name">Selada Keriting</span>
-                    <span class="title-sub">Smart Monitor & Irigasi</span>
+                    <span class="title-sub">Kelompok 5 · Smart Monitor</span>
                 </div>
                 <button class="sideclose" id="sideclose" type="button" aria-label="Tutup menu">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
@@ -73,9 +73,9 @@
                             <span class="pulse-dot" id="sysStatusDot" style="width: 8px; height: 8px; display: inline-block; margin-right: 6px; background-color: var(--accent-emerald);"></span>
                             <span id="sysStatusText">Menghubungkan…</span>
                         </span>
-                        <span class="badge-tag blue" style="font-size: 10px;">v3.2</span>
+                        <span class="badge-tag emerald" style="font-size: 10px;">Kelompok 5</span>
                     </div>
-                    <span class="status-sub" id="sysStatusSub">RTDB Asia-Southeast1</span>
+                    <span class="status-sub" id="sysStatusSub">RTDB /kelompok5 · Asia-Southeast1</span>
                 </div>
             </div>
         </aside>
@@ -86,11 +86,11 @@
             <header class="content-header" style="margin-bottom: 0;">
                 <div class="header-title-block">
                     <h1 id="ptitle">Dashboard</h1>
-                    <p id="psub">Kondisi mikroklimat dan telemetri presisi kebun selada keriting saat ini</p>
+                    <p id="psub">Kondisi mikroklimat dan telemetri presisi kebun selada keriting Kelompok 5 saat ini</p>
                 </div>
                 <div class="header-meta-group">
-                    <span class="badge-tag blue tabular-nums" id="headerDateRange">31 Okt 2026 · Siklus 42 HST</span>
-                    <span class="badge-tag emerald" id="headerGreenhouseId">Greenhouse Smart Hydroponic A-01</span>
+                    <span class="badge-tag blue tabular-nums" id="headerDateRange">Siklus 42 HST · 07:00–16:50 WIB</span>
+                    <span class="badge-tag emerald" id="headerGreenhouseId">Greenhouse Smart Hydroponic · Kelompok 5</span>
                     <span class="badge-tag" id="headerCamStatusBadge">ESP32-CAM Siaga</span>
                     <span class="badge-tag amber tabular-nums" id="headerAlertsCount">0 Peringatan</span>
                 </div>
@@ -306,32 +306,48 @@
 
                 <!-- MAIN AREA: 3 KEY DASHBOARD COMPOSITION PANELS -->
                 <div class="dashboard-main-composition">
-                    <!-- Panel 1: Live Camera View -->
+                    <!-- Panel 1: Live Camera View (/stream) & Autonomous microSD Spooler Status -->
                     <article class="panel-card">
                         <div class="panel-card-header">
                             <div class="panel-card-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
-                                Feed Kamera ESP32-CAM (Kanopi)
+                                Live Camera ESP32-CAM · Kelompok 5
                             </div>
                             <div class="cam-overlay-badges">
+                                <span class="badge-tag slate tabular-nums" id="dashCamEndpointBadge">Endpoint: /stream (:81)</span>
                                 <span class="badge-tag amber tabular-nums" id="dashCamBadge">OFFLINE</span>
                                 <span class="badge-tag blue tabular-nums" id="dashCamRes">SVGA 800×600</span>
                             </div>
                         </div>
                         <div class="panel-card-body">
+                            <div class="cam-inline-ip-bar">
+                                <label for="dashCamIpInput" class="cam-ip-label">IP Lokal ESP32-CAM:</label>
+                                <input type="text" id="dashCamIpInput" class="cam-ip-input tabular-nums" placeholder="192.168.1.23" autocomplete="off">
+                                <button type="button" class="btn btn-primary btn small" id="btnDashCamReconnect">Hubungkan /stream</button>
+                                <a href="#kamera" class="btn btn-secondary btn small" id="btnDashCamGoTab">Kontrol Penuh</a>
+                            </div>
                             <div class="cam-preview-box" id="dashCamBox">
-                                <div class="visual-empty-placeholder" id="dashCamEmpty" style="width: 100%; height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
+                                <div class="visual-empty-placeholder" id="dashCamEmpty" style="width: 100%; height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); background: #050811;">
                                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                                    <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">ESP32-CAM Offline</span>
-                                    <span style="font-size: 11px;">Konfigurasi IP kamera di tab Kamera untuk mengaktifkan live feed MJPEG</span>
+                                    <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Stream Kamera Lokal Belum Terhubung</span>
+                                    <span style="font-size: 11px; text-align: center; max-width: 90%;">Masukkan IP lokal ESP32-CAM di atas untuk membuka stream MJPEG <code>/stream</code>. Saat offline, kamera tetap memotret tiap 10 menit ke microSD.</span>
                                 </div>
                                 <img id="dashCamImg" class="cam-preview-img" src="" alt="Feed Kamera Tanaman" style="display: none;">
                                 <div class="cam-controls-bar">
-                                    <span class="tabular-nums" id="dashCamTime" style="font-size: 11px; color: #ffffff;">Menunggu Kamera</span>
-                                    <div style="display: flex; gap: 6px;">
-                                        <button type="button" class="btn btn-secondary btn small" id="btnDashCamReconnect">Hubungkan Ulang</button>
-                                        <a href="#kamera" class="btn btn-primary btn small" id="btnDashCamGoTab">Kontrol Penuh</a>
-                                    </div>
+                                    <span class="tabular-nums" id="dashCamTime" style="font-size: 11px; color: #ffffff;">Menunggu Kamera (/stream)</span>
+                                    <span class="badge-tag emerald tabular-nums" style="font-size: 10px;">1 Foto / Siklus RAM Aman</span>
+                                </div>
+                            </div>
+                            <div class="cam-hw-status-grid">
+                                <div class="cam-hw-status-item">
+                                    <span class="hw-label">Penyimpanan microSD Lokal</span>
+                                    <strong class="hw-val tabular-nums" id="dashSdStorageVal">NOT AVAILABLE (IP Kamera Kosong)</strong>
+                                    <span class="hw-sub" id="dashSdStorageSub">Jadwal 10 menit (07:00–16:50 WIB) tetap tersimpan ke microSD pada ESP32-CAM tanpa Wi-Fi</span>
+                                </div>
+                                <div class="cam-hw-status-item">
+                                    <span class="hw-label">Sinkronisasi Antrean Foto</span>
+                                    <strong class="hw-val tabular-nums" id="dashSyncQueueVal">Siaga Mandiri (Spooler microSD)</strong>
+                                    <span class="hw-sub" id="dashSyncQueueSub">Sinkronisasi 1 foto/siklus + konfirmasi server saat Wi-Fi aktif</span>
                                 </div>
                             </div>
                         </div>
@@ -711,20 +727,21 @@
                     <aside class="col">
                         <article class="panel">
                             <div class="panel-head">
-                                <h2>Koneksi Kamera</h2>
+                                <h2>Koneksi Kamera Lokal (/stream)</h2>
+                                <span class="badge-tag blue">Port 81 MJPEG</span>
                             </div>
                             <div class="field">
-                                <div class="t"><b>Alamat IP</b><span>Dari portal ESP32-CAM.</span></div>
+                                <div class="t"><b>Alamat IP</b><span>Dari portal ESP32-CAM Kelompok 5.</span></div>
                                 <div class="ctl">
                                     <input type="text" id="camip" placeholder="192.168.1.23" autocomplete="off">
                                     <button class="btn btn-primary btn small" type="button" id="camGo">Hubungkan</button>
                                 </div>
                             </div>
                             <div class="field">
-                                <div class="t"><b>Mode Tampilan</b><span>Foto berkala lebih stabil.</span></div>
+                                <div class="t"><b>Mode Tampilan</b><span>Endpoint <code>/stream</code> (:81) atau <code>/capture</code> (:80).</span></div>
                                 <div class="ctl">
                                     <div class="seg" id="camMode" role="group">
-                                        <button type="button" data-m="stream" aria-pressed="true">Video</button>
+                                        <button type="button" data-m="stream" aria-pressed="true">Video (/stream)</button>
                                         <button type="button" data-m="foto" aria-pressed="false">Foto Berkala</button>
                                     </div>
                                 </div>
@@ -742,6 +759,22 @@
                             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;">
                                 <button class="btn btn-secondary btn small" type="button" id="useAp">Pakai 192.168.4.1</button>
                             </div>
+                        </article>
+
+                        <article class="panel">
+                            <div class="panel-head">
+                                <h2>Scheduler Mandiri microSD &amp; Sinkronisasi</h2>
+                                <span class="badge-tag emerald">Offline-First</span>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Status microSD</b><span>Spooler <code>/kelompok5/queue/</code></span></div>
+                                <div class="ctl"><span class="badge-tag tabular-nums" id="camSdStorageStatus">NOT AVAILABLE</span></div>
+                            </div>
+                            <div class="field">
+                                <div class="t"><b>Antrean Sinkronisasi</b><span>1 foto/siklus + konfirmasi FNV-1a</span></div>
+                                <div class="ctl"><span class="badge-tag blue tabular-nums" id="camSyncQueueStatus">Siaga Mandiri</span></div>
+                            </div>
+                            <p class="hint" style="margin-top:6px;">ESP32-CAM memotret otomatis setiap 10 menit (07:00–16:50 WIB) selama 42 hari langsung ke microSD tanpa bergantung Wi-Fi. File lokal hanya dihapus setelah server mengonfirmasi penerimaan checksum FNV-1a.</p>
                         </article>
 
                         <article class="panel">
@@ -800,6 +833,40 @@
                         <span class="badge-tag" id="growthNextCaptureCountdown">Siaga Terjadwal</span>
                     </div>
                 </div>
+
+                <!-- Visual Campaign Progress & Autonomous microSD Sync Status -->
+                <article class="panel growth-campaign-banner">
+                    <div class="panel-head">
+                        <div>
+                            <h2>Progres Pengambilan Foto 42 Hari &amp; Sinkronisasi microSD (Kelompok 5)</h2>
+                            <p class="hint">Jadwal mandiri ESP32-CAM setiap 10 menit (07:00–16:50 WIB) disimpan ke microSD dan disinkronkan 1 foto/siklus dengan konfirmasi server.</p>
+                        </div>
+                        <div class="toolbar">
+                            <span class="badge-tag tabular-nums" id="growthSdStorageStatus">microSD: NOT AVAILABLE</span>
+                            <span class="badge-tag blue tabular-nums" id="growthSyncQueueStatus">Sync: Siaga Mandiri</span>
+                        </div>
+                    </div>
+                    <div class="dual-progress-grid">
+                        <div class="progress-block">
+                            <div class="progress-labels">
+                                <span>Progres Target Citra Tervalidasi CV (Target Minimum 1.600 Gambar Valid)</span>
+                                <span class="tabular-nums" id="growthValidPctLabel">100% Data Fisik Nyata</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill" id="growthProgressBarFill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="progress-block">
+                            <div class="progress-labels">
+                                <span>Eksekusi Slot Capture Kampanye (60 Slot/Hari × 42 Hari = 2.520 Slot)</span>
+                                <span class="tabular-nums" id="growthSlotsCountText">0 / 2520 Slot Dieksekusi (0%)</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill blue" id="growthSlotsProgressFill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </article>
 
                 <!-- Growth Analytics Charts -->
                 <article class="panel">
@@ -1315,15 +1382,17 @@
 
                         <article class="panel">
                             <div class="panel-head">
-                                <h2>Skema JSON Firebase</h2>
+                                <h2>Skema JSON Firebase (Kelompok 5)</h2>
                             </div>
                             <pre>{
+  "kelompok": "Kelompok 5",
   "suhu": 24.5,
   "kelembapan_udara": 68,
   "kelembapan_tanah": 72,
+  "relay": false,
   "status": "Optimal"
 }</pre>
-                            <p class="hint" style="margin-top:8px;">Data tersinkronisasi di node root atau <code>/kelompok2</code> setiap 1 detik.</p>
+                            <p class="hint" style="margin-top:8px;">Data tersinkronisasi di node <code>/kelompok5</code> (serta kompatibel dengan <code>/history</code> &amp; <code>/current</code>) secara real-time.</p>
                         </article>
                     </aside>
                 </div>

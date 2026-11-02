@@ -579,7 +579,7 @@
                 .catch(() => this.toast('Gagal menyalin data.', 'rose'));
         }
 
-        // ================= CAMERA ENGINE (SSRF Protected) =================
+        // ================= CAMERA ENGINE (SSRF Protected · /stream & microSD Sync) =================
         bindCameraEngine() {
             const camimg = $('#camimg');
             const camstate = $('#camstate');
@@ -595,8 +595,31 @@
             const galClear = $('#galClear');
             const viewReset = $('#viewReset');
 
+            // Main Dashboard Live Camera Elements
+            const dashCamImg = $('#dashCamImg');
+            const dashCamEmpty = $('#dashCamEmpty');
+            const dashCamTime = $('#dashCamTime');
+            const dashCamIpInput = $('#dashCamIpInput');
+            const btnDashCamReconnect = $('#btnDashCamReconnect');
+            const dashCamEndpointBadge = $('#dashCamEndpointBadge');
+
             const S = window.ConfigStore.get();
             if (camip && S.camIp) camip.value = S.camIp;
+            if (dashCamIpInput && S.camIp) dashCamIpInput.value = S.camIp;
+
+            const syncDashCamOverlay = (isLive, hostStr) => {
+                if (dashCamImg) dashCamImg.style.display = isLive ? 'block' : 'none';
+                if (dashCamEmpty) dashCamEmpty.style.display = isLive ? 'none' : 'flex';
+                if (dashCamEndpointBadge) {
+                    dashCamEndpointBadge.textContent = hostStr ? `http://${hostStr}:81/stream` : '/stream · Belum Diatur';
+                }
+                if (dashCamTime) {
+                    dashCamTime.textContent = isLive
+                        ? `LIVE /stream · ${window.DatasetStore.formatTime(Date.now(), false)}`
+                        : (hostStr ? `OFFLINE (${hostStr})` : 'Menunggu IP ESP32-CAM');
+                }
+                this.renderAllViews();
+            };
 
             const camMsg = (title, text) => {
                 if (!camstate) return;
@@ -611,13 +634,22 @@
                 camstate.appendChild(pEl);
             };
 
-            const camIdle = () => camMsg('Kamera belum terhubung', 'Masukkan IP ESP32-CAM (misal 192.168.1.23) atau pakai 192.168.4.1 saat tersambung ke WiFi ESP32-CAM-SELADA.');
+            const camIdle = () => {
+                camMsg('Kamera belum terhubung', 'Masukkan IP ESP32-CAM (misal 192.168.1.23) untuk membuka endpoint /stream atau pakai 192.168.4.1 pada mode AP.');
+                syncDashCamOverlay(false, window.ConfigStore.get().camIp || '');
+            };
 
             const camOk = () => {
+                this.cam.run = true;
                 if (camimg) camimg.hidden = false;
                 if (camstate) camstate.hidden = true;
                 if (livebadge) livebadge.hidden = false;
                 if (camOff) camOff.hidden = false;
+                const hostStr = window.ConfigStore.get().camIp || '';
+                syncDashCamOverlay(true, hostStr);
+                if (window.GrowthStore && hostStr) {
+                    window.GrowthStore.pollCameraNodeStatus(hostStr);
+                }
             };
 
             const camFail = () => {
@@ -628,14 +660,24 @@
                 }
                 if (camimg) camimg.hidden = true;
                 if (livebadge) livebadge.hidden = true;
-                camMsg('Video tidak bisa dimuat', location.protocol === 'https:'
-                    ? 'Browser memblokir stream HTTP kamera di halaman HTTPS. Gunakan HTTP atau periksa IP ESP32-CAM.'
-                    : 'Pastikan satu jaringan WiFi dengan ESP32-CAM, alamat IP valid, dan tidak ada tab lain yang membuka stream.');
+                const hostStr = window.ConfigStore.get().camIp || '';
+                syncDashCamOverlay(false, hostStr);
+                if (window.GrowthStore) {
+                    window.GrowthStore.sdStatus.reachable = false;
+                    window.GrowthStore.renderStorageAndSyncStatus();
+                }
+                camMsg('Feed /stream tidak terjangkau', location.protocol === 'https:'
+                    ? 'Browser memblokir stream HTTP lokal pada halaman HTTPS. Buka dashboard via HTTP lokal. Jadwal foto 10 menit tetap tersimpan otomatis ke microSD ESP32-CAM.'
+                    : 'Kamera ESP32-CAM offline di jaringan lokal. Pengambilan foto otomatis setiap 10 menit (07:00–16:50 WIB) tetap berjalan mandiri ke microSD.');
             };
 
             if (camimg) {
                 camimg.onload = camOk;
                 camimg.onerror = camFail;
+            }
+            if (dashCamImg) {
+                dashCamImg.onload = camOk;
+                dashCamImg.onerror = camFail;
             }
 
             const camStop = () => {
@@ -645,20 +687,24 @@
                     this.cam.timer = null;
                 }
                 if (camimg) camimg.src = '';
+                if (dashCamImg) dashCamImg.src = '';
                 if (livebadge) livebadge.hidden = true;
+                syncDashCamOverlay(false, window.ConfigStore.get().camIp || '');
             };
 
             const camStart = () => {
-                const rawIp = camip ? camip.value : window.ConfigStore.get().camIp;
+                const rawIp = (camip && camip.value.trim()) || (dashCamIpInput && dashCamIpInput.value.trim()) || window.ConfigStore.get().camIp;
                 const validatedHost = Sec.isValidCameraHost(rawIp);
 
                 if (!validatedHost) {
                     if (camip) camip.classList.add('input-invalid');
+                    if (dashCamIpInput) dashCamIpInput.classList.add('input-invalid');
                     camMsg('Format Alamat IP Tidak Valid', 'Gunakan format IPv4 lokal yang benar (contoh: 192.168.1.23 atau 192.168.4.1).');
                     return;
                 }
 
-                if (camip) camip.classList.remove('input-invalid');
+                if (camip) { camip.classList.remove('input-invalid'); camip.value = validatedHost; }
+                if (dashCamIpInput) { dashCamIpInput.classList.remove('input-invalid'); dashCamIpInput.value = validatedHost; }
 
                 // Clear previous timer to prevent overlapping polling loops
                 if (this.cam.timer) {
@@ -668,35 +714,62 @@
 
                 this.cam.want = true;
                 this.cam.run = true;
-                camMsg('Menghubungkan ke kamera…', validatedHost);
+                camMsg('Menghubungkan ke endpoint /stream…', `http://${validatedHost}:81/stream`);
 
                 const getCamUrl = (path) => `http://${validatedHost}${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
                 if (this.cam.mode === 'stream') {
-                    if (camimg) camimg.src = getCamUrl(':81/stream');
+                    const streamUrl = getCamUrl(':81/stream');
+                    if (camimg) camimg.src = streamUrl;
+                    if (dashCamImg) dashCamImg.src = streamUrl;
                 } else {
                     const tick = () => {
                         if (!this.cam.run) return;
-                        if (camimg) camimg.src = getCamUrl('/capture');
+                        const snapUrl = getCamUrl('/capture');
+                        if (camimg) camimg.src = snapUrl;
+                        if (dashCamImg) dashCamImg.src = snapUrl;
                         this.cam.timer = setTimeout(tick, this.cam.interval);
                     };
                     tick();
                 }
+
+                if (window.GrowthStore) {
+                    window.GrowthStore.pollCameraNodeStatus(validatedHost);
+                }
             };
 
-            if (camGo) camGo.addEventListener('click', () => {
-                const validatedHost = Sec.isValidCameraHost(camip ? camip.value : '');
+            const handleConnectHost = (inputEl) => {
+                const validatedHost = Sec.isValidCameraHost(inputEl ? inputEl.value : '');
                 if (!validatedHost) {
-                    if (camip) camip.classList.add('input-invalid');
-                    this.toast('Alamat IP kamera tidak valid (harus IPv4 atau host lokal).', 'rose');
+                    if (inputEl) inputEl.classList.add('input-invalid');
+                    this.toast('Alamat IP kamera tidak valid (gunakan IPv4 lokal seperti 192.168.1.23).', 'rose');
                     return;
                 }
-                if (camip) camip.classList.remove('input-invalid');
+                if (inputEl) inputEl.classList.remove('input-invalid');
                 const conf = window.ConfigStore.get();
                 conf.camIp = validatedHost;
                 window.ConfigStore.save();
                 camStart();
-            });
+            };
+
+            if (camGo) camGo.addEventListener('click', () => handleConnectHost(camip));
+            if (btnDashCamReconnect) {
+                btnDashCamReconnect.addEventListener('click', () => {
+                    if (dashCamIpInput && dashCamIpInput.value.trim()) {
+                        handleConnectHost(dashCamIpInput);
+                    } else if (window.ConfigStore.get().camIp) {
+                        camStart();
+                    } else {
+                        this.toast('Masukkan IP lokal ESP32-CAM terlebih dahulu untuk membuka /stream.', 'amber');
+                        if (dashCamIpInput) dashCamIpInput.focus();
+                    }
+                });
+            }
+            if (dashCamIpInput) {
+                dashCamIpInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') handleConnectHost(dashCamIpInput);
+                });
+            }
 
             if (useAp) useAp.addEventListener('click', () => {
                 if (camip) camip.value = '192.168.4.1';

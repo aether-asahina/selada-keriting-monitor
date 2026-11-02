@@ -1,6 +1,6 @@
-# Selada Keriting Smart Monitor & Irigasi Histeresis (Lactuca sativa L.)
+# Selada Keriting Smart Monitor & Irigasi Histeresis · Kelompok 5 (Lactuca sativa L.)
 
-Sistem telemetri IoT mikroklimat presisi, otomasi irigasi histeresis, Decision Support System (DSS) agronomi, dan pemantauan otomatis pertumbuhan daun selada keriting (*Lactuca sativa L. var. crispa*) berbasis Computer Vision selama siklus 42 hari. Dibangun dengan standar antarmuka profesional (Dark Palette `#090d16` & `#111827`, border `1px solid rgba(255,255,255,0.08)`, aksen `#3b82f6`, `#10b981`, `#f59e0b`, `#ef4444`, tipografi Inter & JetBrains Mono `tabular-nums`, ikon SVG Lucide 1.75px, zero AI emojis) dengan arsitektur responsif bebas luapan kontainer pada seluruh rentang viewport (320px s.d 1920px).
+Sistem telemetri IoT mikroklimat presisi **Kelompok 5**, otomasi irigasi histeresis, Decision Support System (DSS) agronomi, dan pemantauan otomatis pertumbuhan daun selada keriting (*Lactuca sativa L. var. crispa*) berbasis Computer Vision selama siklus 42 hari dengan scheduler mandiri microSD pada ESP32-CAM. Dibangun dengan standar antarmuka profesional (Dark Palette `#090d16` & `#111827`, border `1px solid rgba(255,255,255,0.08)`, aksen `#3b82f6`, `#10b981`, `#f59e0b`, `#ef4444`, tipografi Inter & JetBrains Mono `tabular-nums`, ikon SVG Lucide 1.75px, zero AI emojis) dengan arsitektur responsif bebas luapan kontainer pada seluruh rentang viewport (320px s.d 1920px).
 
 ---
 
@@ -162,29 +162,54 @@ Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian mod
 selada-workspace/
 ├── css/
 │   └── style.css            # Desain sistem Anti-AI-Slop, 12 modul navigasi, responsive breakpoints
+├── firmware/
+│   ├── esp32_kelompok5_sensor/
+│   │   └── esp32_kelompok5_sensor.ino          # Firmware ESP32 Kelompok 5 (Non-blocking millis(), histeresis 65-78%, RTDB /kelompok5)
+│   └── esp32cam_kelompok5_autonomous/
+│       └── esp32cam_kelompok5_autonomous.ino   # Firmware ESP32-CAM Kelompok 5 (/stream :81, scheduler microSD mandiri, 1 foto/siklus sync FNV-1a)
 ├── js/
-│   ├── firebase-config.js   # SecurityUtils (DOM XSS, CWE-1236), ConfigStore, FirebaseEdgeClient
+│   ├── firebase-config.js   # SecurityUtils (DOM XSS, CWE-1236), ConfigStore (/kelompok5), FirebaseEdgeClient
 │   ├── dataset.js           # DatasetStore, statistik telemetri, tabel riwayat, paginasi, export CSV
-│   ├── leaf-growth.js       # LeafGrowthManager, scheduler 10-menit browser, galeri, modal inspeksi
+│   ├── leaf-growth.js       # LeafGrowthManager, polling status microSD & sync queue (/status), galeri, modal inspeksi
 │   ├── ai-assistant.js      # DSS Agronomi Selada, Tetens VPD, unit termal GDD, chat thread
-│   └── dashboard.js         # Pengendali utama, router 12 halaman, SCADA histeresis, ResizeObserver chart
+│   └── dashboard.js         # Pengendali utama, router 12 halaman, live camera /stream, SCADA histeresis, ResizeObserver chart
 ├── scripts/
-│   ├── growth_cv_pipeline.py      # Engine computer vision (ExG Otsu, morfologi, kontur, pengukuran)
-│   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit (Asia/Jakarta, recovery, timeout)
+│   ├── growth_cv_pipeline.py      # Engine computer vision (ExG Otsu, morfologi, kontur, pengukuran Kelompok 5)
+│   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit & endpoint ingest sinkronisasi microSD (FNV-1a verification)
 ├── data/
 │   ├── growth_images/             # Repositori berkas citra aktual (orig.jpg, mask.png, overlay.jpg)
 │   ├── growth_metadata.json       # Metadata terstruktur hasil pengukuran kanopi aktual
 │   └── scheduler_daemon.log       # Log eksekusi scheduler independen
 ├── tests/
-│   ├── run-all-tests.js     # Test runner JavaScript komprehensif (Unit, Integration, Hardware Audit)
-│   └── test_cv_pipeline.py  # Test suite Python untuk engine CV dan scheduler (10/10 passed)
-├── index.html               # Markup 12 modul UI, KPI grid, 3 panel utama, modal dialog
-└── README.md                # Dokumentasi arsitektur, agronomi, wiring pinout, dan pengujian
+│   ├── run-all-tests.js     # Test runner JavaScript komprehensif (Unit, Integration, Firmware & Hardware Audit)
+│   └── test_cv_pipeline.py  # Test suite Python untuk engine CV, scheduler, dan konfirmasi FNV-1a microSD
+├── index.html               # Markup 12 modul UI Kelompok 5, KPI grid, live camera /stream, modal dialog
+└── README.md                # Dokumentasi arsitektur Kelompok 5, firmware microSD, wiring pinout, dan pengujian
 ```
 
 ---
 
-## 4. Konfigurasi Hardware ESP32 & Wiring Pinout
+## 4. Konfigurasi Hardware ESP32 & Arsitektur Scheduler Mandiri ESP32-CAM (Kelompok 5)
+
+### A. Firmware ESP32 Sensor & Histeresis (`firmware/esp32_kelompok5_sensor/`)
+- **Non-Blocking State Machine (`millis()`)**: Bebas dari `delay()` pemblokir CPU.
+- **Filter Median 5-Sampel**: Pembacaan ADC GPIO 34 (HW-390) disaring setiap 50 ms untuk mengeliminasi lonjakan derau elektrik sebelum evaluasi histeresis.
+- **Histeresis Pompa & Safety Cutoff**: Pompa GPIO 26 (Aktif-LOW) menyala saat kelembapan tanah $< 65\%$, mati pada $> 78\%$, dilengkapi jeda proteksi sakelar 5 detik dan pemutus darurat (*safety cutoff*) 120 detik.
+- **Endpoint Firebase RTDB**: Mengirim payload JSON bertanda `"kelompok": "Kelompok 5"` ke `/kelompok5.json` serta kompatibel dengan struktur `/history` dan `/current`.
+
+### B. Firmware ESP32-CAM Autonomous microSD Spooler (`firmware/esp32cam_kelompok5_autonomous/`)
+- **Live Stream Lokal (`/stream`)**: Menyediakan stream MJPEG real-time pada `http://<IP>:81/stream` serta snapshot `http://<IP>/capture` dan telemetri penyimpanan `http://<IP>/status`.
+- **Scheduler Mandiri Offline-First (10 Menit · 07:00–16:50 WIB · 42 Hari)**:
+  - Mengambil foto secara mandiri dan menyimpannya langsung ke kartu **microSD** (`/kelompok5/queue/K5_HSTxx_YYYYMMDD_HHMMSS_ms.jpg` beserta sidecar `.meta`) **tanpa bergantung pada koneksi Wi-Fi**.
+  - Menyimpan titik waktu terakhir di `/kelompok5/state.json` pada microSD untuk **pemulihan pasca-restart (reboot recovery)** bahkan sebelum NTP tersinkronisasi.
+  - Melakukan pemeriksaan ruang bebas minimum (`MIN_SD_FREE_BYTES = 4 MB`) untuk mencegah kerusakan sistem berkas saat microSD penuh, serta melakukan *soft-reset* sensor OV2640 bila terjadi kegagalan frame.
+- **Optimasi RAM Ketat (1 Foto per Siklus)**:
+  - Konfigurasi `fb_count = 1` pada PSRAM; frame buffer kamera segera dibebaskan (`esp_camera_fb_return(fb)`) tepat setelah penulisan berkas ke microSD selesai.
+  - Saat Wi-Fi kembali tersedia, proses *Store-and-Forward* (`syncOneQueuedPhoto()`) hanya membaca dan mengalirkan **maksimal 1 foto per siklus** menggunakan buffer stack 2 KB (`uint8_t chunk[2048]`) tanpa alokasi `String` heap besar.
+- **Validasi Checksum FNV-1a & Konfirmasi Server Sebelum Hapus Lokal**:
+  - Setiap foto yang dikirim menyertakan header `X-Checksum-FNV1A`, `X-Slot-Key`, dan `X-Captured-At`.
+  - Server (`LeafGrowthScheduler.ingest_synced_photo` pada `scripts/scheduler_daemon.py`) memverifikasi ukuran byte, kecocokan hash FNV-1a 32-bit, keutuhan dekode JPEG, dan menjalankan segmentasi CV sebelum mengembalikan JSON `{"ok": true, "confirmed": true}`.
+  - ESP32-CAM **hanya menghapus** berkas `.jpg` dan `.meta` dari antrean microSD apabila menerima HTTP 200 beserta token `"confirmed":true` dan `"ok":true`. Jika jaringan terputus di tengah pengiriman, berkas lokal tetap aman di microSD untuk siklus berikutnya.
 
 ### Skema Pinout ESP32 Microcontroller
 | Komponen | Pin Modul | Pin GPIO ESP32 | Keterangan |
