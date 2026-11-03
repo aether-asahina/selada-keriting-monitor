@@ -17,3 +17,8 @@ Thumbs.db
 
 # Dependency artifacts (if added later)
 node_modules/
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+*$py.class

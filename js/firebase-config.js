@@ -1,25 +1,172 @@
 /**
  * ==============================================================================
- * MODULE: FIREBASE CONFIG & RTDB EDGE CLIENT (serverless-ai-edge compliant)
- * Endpoint: https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/
+ * MODULE: FIREBASE CONFIG, SECURITY UTILS & RTDB EDGE CLIENT
+ * Hardened for: Serverless Edge Security, Data Source Segregation, Input Sanitization
  * ==============================================================================
  */
 
 (function (window) {
     'use strict';
 
-    const CACHE_KEY = 'selada_telemetry_cache_v2';
+    // ==============================================================================
+    // 1. SECURITY & SANITIZATION UTILITIES (Zero-dependency defensive programming)
+    // ==============================================================================
+    const SecurityUtils = {
+        /**
+         * Escape HTML special characters to prevent DOM-based XSS
+         */
+        escapeHTML(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
+
+        /**
+         * Allowlist HTML sanitizer for trusted formatting (b, i, em, strong, br, code, span)
+         */
+        sanitizeHTML(dirty) {
+            if (!dirty || typeof dirty !== 'string') return '';
+            if (typeof DOMParser !== 'undefined') {
+                try {
+                    const doc = new DOMParser().parseFromString(dirty, 'text/html');
+                    const ALLOWED_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'BR', 'CODE', 'SPAN', 'P', 'UL', 'LI']);
+                    const ALLOWED_ATTRS = new Set(['class']);
+
+                    const cleanNode = (node) => {
+                        const children = Array.from(node.childNodes);
+                        for (const child of children) {
+                            if (child.nodeType === 1) { // Element
+                                if (!ALLOWED_TAGS.has(child.tagName)) {
+                                    const textNode = doc.createTextNode(child.textContent || '');
+                                    node.replaceChild(textNode, child);
+                                } else {
+                                    Array.from(child.attributes).forEach(attr => {
+                                        if (!ALLOWED_ATTRS.has(attr.name.toLowerCase())) {
+                                            child.removeAttribute(attr.name);
+                                        }
+                                    });
+                                    cleanNode(child);
+                                }
+                            } else if (child.nodeType === 8) { // Comment
+                                node.removeChild(child);
+                            }
+                        }
+                    };
+
+                    cleanNode(doc.body);
+                    return doc.body.innerHTML;
+                } catch {
+                    return this.escapeHTML(dirty);
+                }
+            }
+            // Fallback when DOMParser is unavailable: strip dangerous tags and script/javascript
+            let clean = dirty
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                .replace(/on\w+\s*=/gi, '')
+                .replace(/javascript:/gi, '');
+            return clean;
+        },
+
+        /**
+         * CSV Formula Injection mitigation (CWE-1236)
+         * Prepends apostrophe if text starts with dangerous formula execution triggers
+         */
+        escapeCSV(field) {
+            if (field === null || field === undefined) return '';
+            let val = String(field);
+            const DANGEROUS_PREFIXES = ['=', '+', '-', '@', '\t', '\r'];
+            if (DANGEROUS_PREFIXES.some(prefix => val.startsWith(prefix))) {
+                val = `'` + val;
+            } else if (DANGEROUS_PREFIXES.some(prefix => val.trim().startsWith(prefix))) {
+                val = `'` + val.trim();
+            }
+            if (val.includes(',') || val.includes('"') || val.includes('\n') || val.includes('\r')) {
+                val = `"` + val.replace(/"/g, '""') + `"`;
+            }
+            return val;
+        },
+
+        /**
+         * Sensor numeric validation with physical range checks
+         */
+        validateNumber(val, min, max, defaultVal = null) {
+            if (val === null || val === undefined || val === '') return defaultVal;
+            const num = Number(val);
+            if (!Number.isFinite(num) || Number.isNaN(num)) return defaultVal;
+            if (num < min || num > max) return defaultVal;
+            return num;
+        },
+
+        /**
+         * Validate telemetry timestamps (must be between year 2020 and now + 60s)
+         */
+        validateTimestamp(t, fallback = Date.now()) {
+            const num = Number(t);
+            const MIN_VALID_TIME = 1577836800000; // 2020-01-01
+            const MAX_VALID_TIME = Date.now() + 60000; // Allow 60s clock skew
+            if (!Number.isFinite(num) || num < MIN_VALID_TIME || num > MAX_VALID_TIME) {
+                return fallback;
+            }
+            return num;
+        },
+
+        /**
+         * Validate Firebase RTDB URL to prevent SSRF and protocol manipulation
+         */
+        isValidFirebaseUrl(url) {
+            if (!url || typeof url !== 'string') return false;
+            try {
+                const u = new URL(url.trim());
+                if (u.protocol !== 'https:') return false;
+                const host = u.hostname.toLowerCase();
+                return host.endsWith('.firebaseio.com') || host.endsWith('.firebasedatabase.app');
+            } catch {
+                return false;
+            }
+        },
+
+        /**
+         * Validate camera IP/hostname to prevent SSRF and malicious protocol execution
+         */
+        isValidCameraHost(raw) {
+            if (!raw || typeof raw !== 'string') return null;
+            const trimmed = raw.trim();
+            if (/^(javascript|data|file|ftp):/i.test(trimmed)) return null;
+            if (/[<>";|&`$]/.test(trimmed)) return null;
+            const host = trimmed.replace(/^https?:\/\//i, '').replace(/[\/?#].*$/, '');
+            // Reject cloud metadata link-local address (169.254.x.x)
+            if (/^169\.254\./.test(host)) return null;
+            const ipv4Regex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(:[0-9]{1,5})?$/;
+            const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*(:[0-9]{1,5})?$/;
+            if (ipv4Regex.test(host) || hostnameRegex.test(host)) {
+                return host;
+            }
+            return null;
+        }
+    };
+
+    window.SecurityUtils = SecurityUtils;
+
+    // ==============================================================================
+    // 2. CONFIGURATION STORE & PERSISTENCE
+    // ==============================================================================
+    const CACHE_KEY = 'selada_telemetry_live_cache_v3';
     const SETTINGS_KEY = 'selada-dash-v3';
 
     const DEF_SETTINGS = {
         firebase: 'https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/',
+        firebaseNode: 'kelompok5',
+        groupName: 'Kelompok 5',
         poll: 2000,
         fetchN: 300,
         unit: 'C',
         clock: '24',
-        theme: 'dark',
-        forceDemo: false,
-        dry: 65, // Selada Keriting normal 65-78%
+        theme: 'light',
+        dry: 65, // Standard optimal range for Selada Keriting (65-78%)
         wet: 78,
         camIp: '',
         rules: {
@@ -62,7 +209,15 @@
                 console.warn('[ConfigStore] Failed to load settings from storage:', e);
             }
 
-            if (!this.S.firebase || this.S.firebase.includes('smart-farming-selada')) {
+            // Migrasi satu kali: redesign UI v2 memakai tema terang sebagai bawaan.
+            // Pengaturan lain (URL Firebase, IP kamera, ambang batas) tidak disentuh.
+            if (!this.S.uiV2) {
+                this.S.theme = 'light';
+                this.S.uiV2 = true;
+                try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.S)); } catch (_) { /* abaikan */ }
+            }
+
+            if (!SecurityUtils.isValidFirebaseUrl(this.S.firebase)) {
                 this.S.firebase = DEF_SETTINGS.firebase;
             }
             return this.S;
@@ -92,7 +247,7 @@
     const configManager = new ConfigStore();
     window.ConfigStore = configManager;
 
-    // Firebase 20-char push ID alphabet for timestamp decoding
+    // Firebase 20-character push ID decoder
     const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
 
     function decodePushTimestamp(id) {
@@ -115,15 +270,22 @@
         return u;
     }
 
+    // ==============================================================================
+    // 3. HARDENED FIREBASE EDGE CLIENT WITH STRICT DATA SEPARATION
+    // ==============================================================================
     class FirebaseClient {
         constructor() {
             this.listeners = [];
             this.statusListeners = [];
             this.isPolling = false;
+            this.isFetching = false; // Mutex to prevent overlapping network polls
             this.pollTimer = null;
-            this.cachedData = [];
-            this.connectionState = 'disconnected';
-            this.demoState = { soil: 72, temp: 24.5, hum: 68, boost: 0 };
+            
+            // 100% REAL DATA DISCIPLINE: Only genuine live telemetry or genuine offline cache
+            this.liveRecords = [];   // Actual verified data from Firebase RTDB
+            this.currentSource = 'offline'; // 'live' | 'cache' | 'offline'
+            this.connectionState = 'disconnected'; // 'connected' | 'empty' | 'offline' | 'connecting' | 'disconnected'
+
             this.loadCache();
         }
 
@@ -133,7 +295,9 @@
                 if (stored) {
                     const parsed = JSON.parse(stored);
                     if (Array.isArray(parsed) && parsed.length > 0) {
-                        this.cachedData = parsed;
+                        // Mark cached records with source 'cache'
+                        this.liveRecords = parsed.map(r => Object.assign({}, r, { source: 'cache' }));
+                        this.currentSource = 'cache';
                     }
                 }
             } catch (err) {
@@ -143,8 +307,10 @@
 
         saveCache() {
             try {
-                if (this.cachedData.length > 0) {
-                    const sliceToSave = this.cachedData.slice(-600);
+                // ONLY persist genuine live records to offline cache
+                const genuineRecords = this.liveRecords.filter(r => r.source === 'live' || r.source === 'cache');
+                if (genuineRecords.length > 0) {
+                    const sliceToSave = genuineRecords.slice(-600);
                     localStorage.setItem(CACHE_KEY, JSON.stringify(sliceToSave));
                 }
             } catch (err) {
@@ -152,54 +318,145 @@
             }
         }
 
-        normalizeRecord(obj, keyOrTimestamp) {
-            const time = typeof keyOrTimestamp === 'number' 
-                ? keyOrTimestamp 
-                : (decodePushTimestamp(keyOrTimestamp) || Date.now());
+        /**
+         * Parses numeric or WIB string timestamps ("YYYY-MM-DD HH:mm:ss") into epoch ms
+         */
+        parseFlexibleTimestamp(rawTs, keyOrTimestamp) {
+            if (typeof rawTs === 'number' && Number.isFinite(rawTs) && rawTs > 1e11) {
+                return rawTs;
+            }
+            if (typeof rawTs === 'string' && rawTs.trim()) {
+                const s = rawTs.trim();
+                if (/^\d{10,13}$/.test(s)) {
+                    const n = Number(s);
+                    return s.length === 10 ? n * 1000 : n;
+                }
+                const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+                if (isoMatch) {
+                    const parsedWib = Date.parse(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T${isoMatch[4]}:${isoMatch[5]}:${isoMatch[6]}+07:00`);
+                    if (Number.isFinite(parsedWib)) return parsedWib;
+                }
+                const fallbackParse = Date.parse(s);
+                if (Number.isFinite(fallbackParse)) return fallbackParse;
+            }
+            if (typeof keyOrTimestamp === 'number' && Number.isFinite(keyOrTimestamp)) {
+                return keyOrTimestamp;
+            }
+            return decodePushTimestamp(keyOrTimestamp) || Date.now();
+        }
+
+        /**
+         * Validates and normalizes raw telemetry records (supports Kelompok 5 Indonesian & English schemas)
+         */
+        normalizeRecord(obj, keyOrTimestamp, source = 'live') {
+            if (!obj || typeof obj !== 'object') return null;
+
+            const rawTs = obj.timestamp !== undefined ? obj.timestamp : obj.t;
+            const decodedTime = this.parseFlexibleTimestamp(rawTs, keyOrTimestamp);
+            const validatedTime = SecurityUtils.validateTimestamp(decodedTime, Date.now());
+
+            // Support both Kelompok 5 Indonesian schema and standard English RTDB schema
+            const rawSuhu = obj.suhu !== undefined ? obj.suhu : obj.temperature;
+            const rawUdara = obj.kelembapan_udara !== undefined ? obj.kelembapan_udara : obj.humidity;
+            const rawTanah = obj.kelembapan_tanah !== undefined ? obj.kelembapan_tanah : obj.soil;
+
+            // Sensor physical boundary checks for Selada Keriting (Lactuca sativa L.)
+            const suhu = SecurityUtils.validateNumber(rawSuhu, 0, 55, null);
+            const udara = SecurityUtils.validateNumber(rawUdara, 5, 100, null);
+            const tanah = SecurityUtils.validateNumber(rawTanah, 0, 100, null);
+
+            // If key telemetry fields are missing/corrupted, reject to prevent chart/stat poisoning
+            if (tanah === null || udara === null || suhu === null) {
+                return null;
+            }
+
+            // Check if hardware provides relay verification feedback
+            let relayFeedback = null;
+            if (obj.relay !== undefined) relayFeedback = Boolean(obj.relay);
+            else if (obj.pompa !== undefined) relayFeedback = Boolean(obj.pompa);
+            else if (obj.status_relay !== undefined) relayFeedback = Boolean(obj.status_relay);
+            else if (obj.pump !== undefined) relayFeedback = Boolean(obj.pump);
 
             return {
-                id: typeof keyOrTimestamp === 'string' ? keyOrTimestamp : 'rec_' + time,
-                t: time,
-                suhu: Number(obj.suhu !== undefined ? obj.suhu : 24.5),
-                udara: Number(obj.kelembapan_udara !== undefined ? obj.kelembapan_udara : 68),
-                tanah: Number(obj.kelembapan_tanah !== undefined ? obj.kelembapan_tanah : 72),
-                statusRaw: obj.status || ''
+                id: typeof keyOrTimestamp === 'string' ? SecurityUtils.escapeHTML(keyOrTimestamp) : 'rec_' + validatedTime,
+                t: validatedTime,
+                suhu: Number(suhu.toFixed(1)),
+                udara: Math.round(udara),
+                tanah: Math.round(tanah),
+                statusRaw: SecurityUtils.escapeHTML(obj.status || ''),
+                kelompok: SecurityUtils.escapeHTML(obj.kelompok || 'Kelompok 5'),
+                source: source, // 'live' | 'cache'
+                relayActual: relayFeedback // Verified relay feedback or null if unmeasured
             };
         }
 
-        parseDatabaseResponse(json) {
+        parseDatabaseResponse(json, source = 'live') {
             if (!json || typeof json !== 'object') return [];
-            
-            if (json.suhu !== undefined && json.kelembapan_tanah !== undefined) {
-                return [this.normalizeRecord(json, Date.now())];
+
+            // Single object payload
+            if ((json.suhu !== undefined && json.kelembapan_tanah !== undefined) ||
+                (json.temperature !== undefined && json.soil !== undefined)) {
+                const norm = this.normalizeRecord(json, Date.now(), source);
+                return norm ? [norm] : [];
             }
 
-            if (json.kelompok2 && typeof json.kelompok2 === 'object') {
-                return this.parseDatabaseResponse(json.kelompok2);
-            }
+            const rowMap = new Map();
 
-            const rows = [];
-            const keys = Object.keys(json).sort();
-            for (const key of keys) {
-                const item = json[key];
-                if (item && typeof item === 'object' && item.kelembapan_tanah !== undefined) {
-                    const parsed = this.normalizeRecord(item, key);
-                    if (Number.isFinite(parsed.tanah) && parsed.tanah >= 0) {
-                        rows.push(parsed);
+            // 1. Extract nested 'kelompok5' records if present (Primary Kelompok 5 node)
+            if (json.kelompok5 && typeof json.kelompok5 === 'object') {
+                for (const key of Object.keys(json.kelompok5)) {
+                    const item = json.kelompok5[key];
+                    if (item && typeof item === 'object') {
+                        const parsed = this.normalizeRecord(item, key, source);
+                        if (parsed) rowMap.set(parsed.t, parsed);
                     }
                 }
             }
-            return rows;
+
+            // 2. Extract nested 'history' and 'current' records if present on root RTDB
+            if (json.history && typeof json.history === 'object') {
+                for (const key of Object.keys(json.history)) {
+                    const item = json.history[key];
+                    if (item && typeof item === 'object') {
+                        const parsed = this.normalizeRecord(item, key, source);
+                        if (parsed) rowMap.set(parsed.t, parsed);
+                    }
+                }
+            }
+            if (json.current && typeof json.current === 'object') {
+                const parsedCur = this.normalizeRecord(json.current, 'current', source);
+                if (parsedCur) rowMap.set(parsedCur.t, parsedCur);
+            }
+
+            // 3. Extract root-level push records (ignoring non-telemetry nodes)
+            const NON_RECORD_KEYS = new Set(['kelompok5', 'history', 'current', 'settings', 'cam_status']);
+            for (const key of Object.keys(json)) {
+                if (NON_RECORD_KEYS.has(key)) continue;
+                const item = json[key];
+                if (item && typeof item === 'object') {
+                    const parsed = this.normalizeRecord(item, key, source);
+                    if (parsed) rowMap.set(parsed.t, parsed);
+                }
+            }
+
+            return Array.from(rowMap.values()).sort((a, b) => a.t - b.t);
         }
 
         async fetchRows(url, n, signalMs = 6000) {
+            const S = configManager.get();
+            const target = url || S.firebase;
+
+            if (!SecurityUtils.isValidFirebaseUrl(target)) {
+                throw new Error('URL Firebase tidak valid atau domain tidak diizinkan');
+            }
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), signalMs);
-            const targetUrl = normalizeUrl(url || configManager.get().firebase);
+            const reqUrl = normalizeUrl(target);
 
             try {
                 const query = `?orderBy=${encodeURIComponent('"$key"')}&limitToLast=${encodeURIComponent(n)}`;
-                const response = await fetch(targetUrl + query, {
+                const response = await fetch(reqUrl + query, {
                     signal: controller.signal,
                     cache: 'no-store'
                 });
@@ -209,7 +466,7 @@
                 }
 
                 const json = await response.json();
-                return this.parseDatabaseResponse(json);
+                return this.parseDatabaseResponse(json, 'live');
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -217,7 +474,10 @@
 
         async testConnection(url) {
             try {
-                const rows = await this.fetchRows(url, 1, 6000);
+                if (!SecurityUtils.isValidFirebaseUrl(url)) {
+                    return { ok: false, error: 'URL Firebase harus berakhiran .firebaseio.com atau .firebasedatabase.app' };
+                }
+                const rows = await this.fetchRows(url, 5, 6000);
                 return {
                     ok: true,
                     count: rows.length,
@@ -226,110 +486,110 @@
             } catch (err) {
                 return {
                     ok: false,
-                    error: err.message
+                    error: SecurityUtils.escapeHTML(err.message)
                 };
             }
         }
 
-        demoStep(t) {
-            const S = configManager.get();
-            const pump = this.demoState.soil < S.dry;
-            if (pump) {
-                this.demoState.soil += 1.0 + Math.random() * 0.5;
-                this.demoState.boost = 8;
-            } else if (this.demoState.boost > 0) {
-                this.demoState.soil += 0.4;
-                this.demoState.boost--;
-            } else {
-                this.demoState.soil -= 0.08 + Math.random() * 0.08;
-            }
-            this.demoState.soil = Math.max(20, Math.min(95, this.demoState.soil));
-            this.demoState.temp += (Math.random() - 0.5) * 0.2 + (24.5 - this.demoState.temp) * 0.03;
-            this.demoState.hum += (Math.random() - 0.5) * 0.5 + (68 - this.demoState.hum) * 0.03;
-
-            return {
-                id: 'demo_' + t,
-                t: t,
-                suhu: Number(this.demoState.temp.toFixed(1)),
-                udara: Math.round(this.demoState.hum),
-                tanah: Math.round(this.demoState.soil),
-                statusRaw: this.demoState.soil < S.dry ? 'Kering' : (this.demoState.soil > S.wet ? 'Basah' : 'Optimal')
-            };
-        }
-
-        demoRows(n) {
-            const now = Date.now(), rows = [];
-            for (let i = n - 1; i >= 0; i--) {
-                rows.push(this.demoStep(now - i * 1000));
-            }
-            return rows;
-        }
-
+        // ==============================================================================
+        // POLLING ENGINE WITH RACE-CONDITION MUTEX (100% REAL DATA ONLY)
+        // ==============================================================================
         async pollCycle() {
             if (!this.isPolling) return;
             const S = configManager.get();
 
-            if (S.forceDemo) {
-                const rows = this.demoRows(Math.max(1, Math.round(S.poll / 1000)));
-                this.mergeData(rows);
-                this.connectionState = 'demo';
-                this.notifyStatus('demo', 'Mode Data Contoh Aktif');
-            } else {
-                try {
-                    const n = this.cachedData.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - this.getLatest().t) / 1000) + 6)) : S.fetchN;
-                    const rows = await this.fetchRows(S.firebase, n);
-
-                    if (rows.length > 0) {
-                        this.mergeData(rows);
-                        this.connectionState = 'connected';
-                        this.notifyStatus('connected', 'Langsung dari Firebase RTDB');
-                    } else if (this.cachedData.length === 0) {
-                        // If completely empty, seed demo
-                        const fallback = this.demoRows(60);
-                        this.mergeData(fallback);
-                        this.connectionState = 'demo';
-                        this.notifyStatus('demo', 'Data contoh (Firebase kosong)');
-                    }
-                } catch (err) {
-                    if (this.cachedData.length === 0) {
-                        const fallback = this.demoRows(60);
-                        this.mergeData(fallback);
-                        this.connectionState = 'fallback';
-                        this.notifyStatus('fallback', 'Data contoh (Firebase offline)');
-                    } else {
-                        this.connectionState = 'offline';
-                        this.notifyStatus('offline', 'Firebase terputus · Menggunakan offline cache');
-                        const sim = this.demoStep(Date.now());
-                        this.mergeData([sim]);
-                    }
-                }
+            // Prevent polling overlap if previous fetch takes longer than interval
+            if (this.isFetching) {
+                this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
+                return;
             }
 
-            this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
+            this.isFetching = true;
+
+            try {
+                const lastRec = this.getLatestGenuine();
+                const n = this.liveRecords.length ? Math.min(600, Math.max(20, Math.ceil((Date.now() - (lastRec ? lastRec.t : Date.now())) / 1000) + 6)) : S.fetchN;
+                
+                const rows = await this.fetchRows(S.firebase, n);
+
+                if (rows.length > 0) {
+                    this.currentSource = 'live';
+                    this.mergeLiveData(rows);
+
+                    const latestRow = rows[rows.length - 1];
+                    const ageSec = Math.max(0, Math.round((Date.now() - latestRow.t) / 1000));
+                    const offlineThresholdSec = (S.rules && S.rules.off && Number.isFinite(S.rules.off.v)) ? S.rules.off.v : 15;
+
+                    if (ageSec > offlineThresholdSec) {
+                        this.connectionState = 'stale';
+                        const dStr = new Date(latestRow.t).toLocaleString('id-ID', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+                        });
+                        this.notifyStatus('stale', `RTDB Terhubung · ESP32 Offline (Terakhir: ${dStr})`);
+                    } else {
+                        this.connectionState = 'connected';
+                        this.notifyStatus('connected', 'Telemetri Live (ESP32 & Firebase RTDB Aktif)');
+                    }
+                } else if (this.liveRecords.length === 0) {
+                    // Firebase reachable but completely empty of physical telemetry
+                    this.currentSource = 'live';
+                    this.connectionState = 'empty';
+                    this.notifyStatus('empty', 'Firebase RTDB Kosong (Belum Ada Telemetri Sensor)');
+                    this.notifyData([], []);
+                }
+            } catch (err) {
+                if (this.liveRecords.length > 0) {
+                    // Fallback to genuine cached records
+                    this.currentSource = 'cache';
+                    this.connectionState = 'offline';
+                    this.liveRecords.forEach(r => { r.source = 'cache'; });
+                    this.notifyStatus('offline', 'Offline Cache (Jaringan Terputus)');
+                    // Trigger UI update using cached genuine records
+                    this.notifyData(this.liveRecords, []);
+                } else {
+                    // No cache at all: display genuine disconnected state (Zero synthetic fallback)
+                    this.currentSource = 'offline';
+                    this.connectionState = 'disconnected';
+                    this.notifyStatus('disconnected', 'OFFLINE / DISCONNECTED (Firebase Tidak Terjangkau)');
+                    this.notifyData([], []);
+                }
+            } finally {
+                this.isFetching = false;
+                if (this.isPolling) {
+                    this.pollTimer = setTimeout(() => this.pollCycle(), S.poll);
+                }
+            }
         }
 
-        mergeData(newRows) {
+        mergeLiveData(newRows) {
             if (!Array.isArray(newRows) || newRows.length === 0) return;
 
-            const existingTimes = new Set(this.cachedData.map(r => r.t));
+            const existingByTime = new Map(this.liveRecords.map(r => [r.t, r]));
             let added = [];
+            let upgraded = 0;
 
             for (const row of newRows) {
-                if (!existingTimes.has(row.t)) {
-                    this.cachedData.push(row);
+                const existing = existingByTime.get(row.t);
+                if (!existing) {
+                    this.liveRecords.push(row);
+                    existingByTime.set(row.t, row);
                     added.push(row);
-                    existingTimes.add(row.t);
+                } else if (existing.source !== 'live') {
+                    existing.source = 'live';
+                    upgraded++;
                 }
             }
 
-            this.cachedData.sort((a, b) => a.t - b.t);
-            if (this.cachedData.length > 3600) {
-                this.cachedData = this.cachedData.slice(-3600);
+            // Chronological sort
+            this.liveRecords.sort((a, b) => a.t - b.t);
+            if (this.liveRecords.length > 3600) {
+                this.liveRecords = this.liveRecords.slice(-3600);
             }
 
-            if (added.length > 0) {
+            if (added.length > 0 || upgraded > 0) {
                 this.saveCache();
-                this.notifyData(this.cachedData, added);
+                this.notifyData(this.liveRecords, added);
             }
         }
 
@@ -342,6 +602,7 @@
 
         stop() {
             this.isPolling = false;
+            this.isFetching = false;
             if (this.pollTimer) {
                 clearTimeout(this.pollTimer);
                 this.pollTimer = null;
@@ -350,15 +611,15 @@
 
         restart() {
             this.stop();
-            this.cachedData = [];
+            this.liveRecords = [];
             this.start();
         }
 
         subscribe(callback) {
             if (typeof callback === 'function') {
                 this.listeners.push(callback);
-                if (this.cachedData.length > 0) {
-                    callback(this.cachedData, [this.cachedData[this.cachedData.length - 1]]);
+                if (this.liveRecords.length > 0) {
+                    callback(this.liveRecords, [this.liveRecords[this.liveRecords.length - 1]], this.currentSource);
                 }
             }
             return () => {
@@ -369,7 +630,7 @@
         subscribeStatus(callback) {
             if (typeof callback === 'function') {
                 this.statusListeners.push(callback);
-                callback(this.connectionState, '');
+                callback(this.connectionState, '', this.currentSource);
             }
             return () => {
                 this.statusListeners = this.statusListeners.filter(cb => cb !== callback);
@@ -379,7 +640,7 @@
         notifyData(allData, addedRows) {
             for (const listener of this.listeners) {
                 try {
-                    listener(allData, addedRows);
+                    listener(allData, addedRows, this.currentSource);
                 } catch (e) {
                     console.error('[FirebaseClient] Listener error:', e);
                 }
@@ -389,21 +650,27 @@
         notifyStatus(state, message) {
             for (const listener of this.statusListeners) {
                 try {
-                    listener(state, message);
+                    listener(state, message, this.currentSource);
                 } catch (e) {
                     console.error('[FirebaseClient] Status listener error:', e);
                 }
             }
         }
 
+        getLatestGenuine() {
+            return this.liveRecords.length > 0 ? this.liveRecords[this.liveRecords.length - 1] : null;
+        }
+
         getLatest() {
-            return this.cachedData.length > 0 
-                ? this.cachedData[this.cachedData.length - 1] 
-                : null;
+            return this.liveRecords.length > 0 ? this.liveRecords[this.liveRecords.length - 1] : null;
         }
 
         getAll() {
-            return this.cachedData.slice();
+            return this.liveRecords.slice();
+        }
+
+        getSource() {
+            return this.currentSource;
         }
     }
 
