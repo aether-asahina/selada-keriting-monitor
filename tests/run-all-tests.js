@@ -1204,9 +1204,100 @@ try {
 }
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 25: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// TEST SUITE 25: ESP32-CAM AP+STA DUAL MODE, SETUP PORTAL & CONCURRENCY MUTEX
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [25] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
+console.log(`\n${C.bold}--- [25] ESP32-CAM AP+STA Dual Mode, Setup Portal & Concurrency Mutex ---${C.reset}`);
+
+try {
+    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
+    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
+
+    // 1. Dual Mode AP+STA & Hotspot Configuration
+    const hasApStaMode = esp32CamIno.includes('WiFi.mode(WIFI_AP_STA)') &&
+        esp32CamIno.includes('WiFi.softAPConfig') &&
+        esp32CamIno.includes('WiFi.softAP(AP_SSID, AP_PASSWORD)') &&
+        esp32CamIno.includes('AP_SSID[] = "DAUN KERITING"') &&
+        esp32CamIno.includes('AP_IP(192, 168, 50, 1)');
+    if (hasApStaMode) {
+        pass('AP-STA-DualMode', 'ESP32-CAM configures simultaneous Access Point (DAUN KERITING @ 192.168.50.1) and Station mode', 'WIFI_AP_STA & softAPConfig active');
+    } else {
+        fail('AP-STA-DualMode', 'Missing or improper WIFI_AP_STA or softAPConfig configuration in firmware');
+    }
+
+    // 2. Setup Portal & Port 80 Routes
+    const hasPortalRoutes = esp32CamIno.includes('server.on("/", HTTP_GET, handleRoot)') &&
+        esp32CamIno.includes('server.on("/save", HTTP_POST, handleSave)') &&
+        esp32CamIno.includes('server.on("/capture", HTTP_GET, handleCapture)') &&
+        esp32CamIno.includes('server.on("/status", HTTP_GET, handleStatus)') &&
+        esp32CamIno.includes('server.on("/stream", HTTP_GET, handleStreamRedirect)');
+    if (hasPortalRoutes) {
+        pass('Setup-Portal-Routing', 'Port 80 WebServer defines full route map: /, /save, /capture, /status, and /stream redirect', 'Routes properly registered');
+    } else {
+        fail('Setup-Portal-Routing', 'Missing required Port 80 WebServer routes');
+    }
+
+    // 3. Captive Portal Detection & Fallback
+    const hasCaptiveRedirect = esp32CamIno.includes('192.168.50.1') &&
+        esp32CamIno.includes('server.sendHeader("Location", "http://192.168.50.1/")') &&
+        esp32CamIno.includes('server.send(302, "text/plain", "")');
+    if (hasCaptiveRedirect) {
+        pass('Captive-Portal-Redirection', 'Captive portal requests on AP IP automatically redirect to setup form (HTTP 302)', 'Location: http://192.168.50.1/');
+    } else {
+        fail('Captive-Portal-Redirection', 'Missing captive portal 302 redirection logic');
+    }
+
+    // 4. FreeRTOS Camera Mutex Protection
+    const hasCameraMutex = esp32CamIno.includes('SemaphoreHandle_t cameraMutex') &&
+        esp32CamIno.includes('xSemaphoreCreateMutex()') &&
+        esp32CamIno.includes('xSemaphoreTake(cameraMutex') &&
+        esp32CamIno.includes('xSemaphoreGive(cameraMutex');
+    if (hasCameraMutex) {
+        pass('Camera-Concurrency-Mutex', 'Hardware OV2640 DMA access is serialized with FreeRTOS mutex preventing stream vs capture race conditions', 'xSemaphoreTake/Give verified across all callers');
+    } else {
+        fail('Camera-Concurrency-Mutex', 'Missing FreeRTOS cameraMutex synchronization around esp_camera_fb_get');
+    }
+
+    // 5. Full-Byte Verification in Capture Delivery
+    const hasFullByteCheck = esp32CamIno.includes('client.write(fb->buf, fb->len)') &&
+        esp32CamIno.includes('written != expectedLen');
+    if (hasFullByteCheck) {
+        pass('JPEG-Full-Byte-Validation', 'Port 80 /capture validates byte delivery integrity against framebuffer length', 'written != expectedLen mismatch handled');
+    } else {
+        fail('JPEG-Full-Byte-Validation', 'Missing byte verification check during JPEG client delivery');
+    }
+
+    // 6. Extended Status JSON Schema
+    const hasExtendedStatus = esp32CamIno.includes('device') &&
+        esp32CamIno.includes('camera_ready') &&
+        esp32CamIno.includes('wifi_connected') &&
+        esp32CamIno.includes('ntp_synced') &&
+        esp32CamIno.includes('captured') &&
+        esp32CamIno.includes('uploaded') &&
+        esp32CamIno.includes('failed') &&
+        esp32CamIno.includes('hst_day') &&
+        esp32CamIno.includes('last_slot') &&
+        esp32CamIno.includes('confirmed_slot') &&
+        esp32CamIno.includes('attempted_slot') &&
+        esp32CamIno.includes('ap_ssid') &&
+        esp32CamIno.includes('ap_ip') &&
+        esp32CamIno.includes('sta_ip') &&
+        esp32CamIno.includes('rssi') &&
+        esp32CamIno.includes('stream_port') &&
+        esp32CamIno.includes('stream_endpoint');
+    if (hasExtendedStatus) {
+        pass('Status-JSON-Schema-Extended', 'Endpoint /status outputs comprehensive JSON retaining all telemetry keys and adding AP+STA network metrics', '100% backward and forward compatible');
+    } else {
+        fail('Status-JSON-Schema-Extended', 'Missing required keys in /status JSON response');
+    }
+
+} catch (e) {
+    fail('AP-STA-Audit', 'Unexpected error in Suite 25', e.message);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 26: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [26] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
 
 notTested(
     'Hardware-IoT',

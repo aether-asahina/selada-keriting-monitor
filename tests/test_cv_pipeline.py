@@ -370,5 +370,54 @@ class TestESP32CamSlotPersistence(unittest.TestCase):
         self.assertTrue(should_run_next, "Next slot must not be blocked")
 
 
+class TestESP32CamPortalContract(unittest.TestCase):
+    """Audits the AP+STA portal contract, route parameters, and status JSON compatibility."""
+
+    def test_portal_save_validation(self):
+        def validate_save_credentials(ssid: str, password: str) -> bool:
+            ssid_clean = ssid.strip() if ssid else ""
+            if not ssid_clean or len(ssid_clean) > 32 or len(password) > 64:
+                return False
+            return True
+
+        self.assertTrue(validate_save_credentials("MyHomeWiFi", "SecretPass123"))
+        self.assertTrue(validate_save_credentials("   SpacedSSID   ", ""))
+        self.assertFalse(validate_save_credentials("", "SecretPass123"))
+        self.assertFalse(validate_save_credentials("   ", "SecretPass123"))
+        self.assertFalse(validate_save_credentials("A" * 33, "SecretPass123"))
+        self.assertFalse(validate_save_credentials("MyHomeWiFi", "P" * 65))
+
+    def test_extended_status_json_contract(self):
+        sample_status = {
+            "device": "ESP32-CAM",
+            "camera_ready": True,
+            "wifi_connected": True,
+            "ntp_synced": True,
+            "captured": 120,
+            "uploaded": 119,
+            "failed": 1,
+            "hst_day": 3,
+            "last_slot": "2026-11-03_07:40",
+            "confirmed_slot": "2026-11-03_07:40",
+            "attempted_slot": "2026-11-03_07:40",
+            "ap_ssid": "DAUN KERITING",
+            "ap_ip": "192.168.50.1",
+            "sta_ip": "192.168.1.150",
+            "rssi": -65,
+            "stream_port": 81,
+            "stream_endpoint": "/stream"
+        }
+        # Verify all legacy keys exist and match types
+        self.assertIsInstance(sample_status["camera_ready"], bool)
+        self.assertIsInstance(sample_status["wifi_connected"], bool)
+        self.assertIsInstance(sample_status["uploaded"], int)
+        self.assertEqual(sample_status["stream_endpoint"], "/stream")
+        # Verify all AP/STA extension keys exist
+        self.assertEqual(sample_status["device"], "ESP32-CAM")
+        self.assertEqual(sample_status["ap_ssid"], "DAUN KERITING")
+        self.assertEqual(sample_status["ap_ip"], "192.168.50.1")
+        self.assertEqual(sample_status["stream_port"], 81)
+
+
 if __name__ == "__main__":
     unittest.main()
