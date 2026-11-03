@@ -84,6 +84,12 @@ DEFAULT_HTTP_SOCKET_TIMEOUT_SECONDS = 3.5
 DEFAULT_SLOT_LEASE_TTL_MS = 15_000    # 15s lease (> 9.5s execution deadline)
 DEFAULT_BLOB_API_VERSION = "7"
 
+ALLOWED_CAPTURE_SOURCES = (
+    "esp32cam_wifi_direct",
+    "mobile_manual_fallback",
+    "browser_stream_snapshot",
+)
+
 
 class MissingETagError(RuntimeError):
     """Raised when Firebase RTDB does not return a required ETag for CAS."""
@@ -565,6 +571,13 @@ class FirebaseRTDBStore:
             "fnv1a": fenced_meta.get("fnv1a", ""),
             "checksum_fnv1a": fenced_meta.get("fnv1a", ""),
             "quality_status": fenced_meta.get("quality_status", "VALID"),
+            "quality_detail": fenced_meta.get("quality_detail", ""),
+            "leaf_width_px": fenced_meta.get("leaf_width_px", 0),
+            "leaf_area_px": fenced_meta.get("leaf_area_px", 0),
+            "hst_day": fenced_meta.get("hst_day", 1),
+            "captured_at": fenced_meta.get("captured_at", now_ms),
+            "time_wib": fenced_meta.get("time_wib", ""),
+            "capture_source": fenced_meta.get("capture_source", "esp32cam_wifi_direct"),
             "image_url": fenced_meta.get("image_url", ""),
             "mask_url": fenced_meta.get("mask_url", ""),
             "overlay_url": fenced_meta.get("overlay_url", ""),
@@ -806,6 +819,18 @@ class ServerlessCaptureIngestor:
                 "error": f"Invalid X-Kelompok header '{kelompok_hdr}' (expected 'Kelompok 5')",
             }
 
+        raw_capture_source = self._get_header(hdrs, "X-Capture-Source")
+        if raw_capture_source is None or str(raw_capture_source).strip() == "":
+            resolved_capture_source = "esp32cam_wifi_direct"
+        else:
+            resolved_capture_source = str(raw_capture_source).strip()
+            if resolved_capture_source not in ALLOWED_CAPTURE_SOURCES:
+                return 422, {
+                    "ok": False,
+                    "confirmed": False,
+                    "error": f"Invalid X-Capture-Source header '{resolved_capture_source}'",
+                }
+
         # 3. Payload Size & Bounds Validation (100B .. 4.5MB Vercel limit)
         if not raw_bytes or not isinstance(raw_bytes, (bytes, bytearray)):
             return 422, {"ok": False, "confirmed": False, "error": "Empty or truncated payload"}
@@ -997,6 +1022,16 @@ class ServerlessCaptureIngestor:
                 "fnv1a": existing_fnv or actual_fnv1a,
                 "checksum_fnv1a": existing_fnv or actual_fnv1a,
                 "quality_status": slot_state.get("quality_status", "VALID"),
+                "quality_detail": slot_state.get("quality_detail", ""),
+                "leaf_width_px": slot_state.get("leaf_width_px", 0),
+                "leaf_area_px": slot_state.get("leaf_area_px", 0),
+                "hst_day": slot_state.get("hst_day", resolved_hst),
+                "captured_at": slot_state.get("captured_at", ts_ms),
+                "time_wib": slot_state.get("time_wib", ""),
+                "capture_source": slot_state.get("capture_source", resolved_capture_source),
+                "image_url": slot_state.get("image_url", ""),
+                "mask_url": slot_state.get("mask_url", ""),
+                "overlay_url": slot_state.get("overlay_url", ""),
             }
 
         if claim_status == "IN_PROGRESS":
@@ -1034,8 +1069,12 @@ class ServerlessCaptureIngestor:
             )
 
             record["slot_key"] = resolved_slot
-            record["capture_source"] = "esp32cam_wifi_direct"
-            record["source_file_name"] = str(file_name or "wifi-camera-upload.jpg")
+            record["capture_source"] = resolved_capture_source
+            record["source_file_name"] = (
+                "mobile-manual-upload.jpg"
+                if resolved_capture_source == "mobile_manual_fallback"
+                else str(file_name or "wifi-camera-upload.jpg")
+            )
             record["file_size"] = actual_size
             record["fnv1a"] = actual_fnv1a
             record["checksum_fnv1a"] = actual_fnv1a
@@ -1082,6 +1121,13 @@ class ServerlessCaptureIngestor:
             "fnv1a": actual_fnv1a,
             "checksum_fnv1a": actual_fnv1a,
             "quality_status": record["quality_status"],
+            "quality_detail": record.get("quality_detail", ""),
+            "leaf_width_px": record.get("leaf_width_px", 0),
+            "leaf_area_px": record.get("leaf_area_px", 0),
+            "hst_day": record.get("hst_day", resolved_hst),
+            "captured_at": record.get("captured_at", ts_ms),
+            "time_wib": record.get("time_wib", ""),
+            "capture_source": resolved_capture_source,
             "image_url": record["image_url"],
             "mask_url": record["mask_url"],
             "overlay_url": record["overlay_url"],

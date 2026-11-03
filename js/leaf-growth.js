@@ -231,6 +231,12 @@
                 this.renderStorageAndSyncStatus();
                 return null;
             }
+            if (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') {
+                // HTTPS origin cannot fetch plain HTTP RFC1918 IPv4 due to Mixed Active Content & Private Network Access
+                this.sdStatus.reachable = false;
+                this.renderStorageAndSyncStatus();
+                return null;
+            }
             try {
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 3500);
@@ -260,15 +266,55 @@
 
         renderStorageAndSyncStatus() {
             const status = this.sdStatus;
+            const isHttps = typeof window !== 'undefined' && window.location && window.location.protocol === 'https:';
             const cameraLabels = [document.getElementById('dashSdStorageVal'), document.getElementById('growthSdStorageStatus'), document.getElementById('camSdStorageStatus')];
             const uploadLabels = [document.getElementById('dashSyncQueueVal'), document.getElementById('growthSyncQueueStatus'), document.getElementById('camSyncQueueStatus')];
             const cameraSub = document.getElementById('dashSdStorageSub');
             const uploadSub = document.getElementById('dashSyncQueueSub');
-            const cameraText = status.reachable ? 'KAMERA ONLINE' : 'KAMERA OFFLINE';
+            const cameraText = status.reachable ? 'KAMERA ONLINE' : (isHttps ? 'HTTP LAN DIBLOKIR HTTPS' : 'KAMERA OFFLINE');
             cameraLabels.forEach(el => { if (el) el.textContent = cameraText; });
-            uploadLabels.forEach(el => { if (el) el.textContent = status.reachable ? 'WI-FI RECEIVER' : 'MENUNGGU KONEKSI'; });
+            uploadLabels.forEach(el => { if (el) el.textContent = status.reachable ? 'WI-FI RECEIVER' : (isHttps ? 'SERVER VERCEL + FALLBACK HP' : 'MENUNGGU KONEKSI'); });
             if (cameraSub) cameraSub.textContent = 'ESP32-CAM · Scheduler mandiri · WIB';
-            if (uploadSub) uploadSub.textContent = 'JPEG dikirim langsung ke server melalui Wi-Fi';
+            if (uploadSub) uploadSub.textContent = 'JPEG dikirim langsung ke /api/kelompok5/capture';
+        }
+
+        ingestServerlessCaptureResult(apiResult) {
+            if (!apiResult || !apiResult.ok || !apiResult.confirmed) return null;
+            const slotKey = String(apiResult.slot_key || this.getSlotKeyFromTimestamp(Date.now()));
+            this.capturedSlotKeys.add(slotKey);
+            const hstVal = Number.isFinite(Number(apiResult.hst_day)) ? Number(apiResult.hst_day) : this.currentHST;
+            const capAt = Number.isFinite(Number(apiResult.captured_at)) ? Number(apiResult.captured_at) : Date.now();
+            const widthPx = Number.isFinite(Number(apiResult.leaf_width_px)) ? Number(apiResult.leaf_width_px) : 0;
+            const areaPx = Number.isFinite(Number(apiResult.leaf_area_px)) ? Number(apiResult.leaf_area_px) : 0;
+            const record = {
+                image_id: String(apiResult.image_id || `img_${Date.now()}`),
+                slot_key: slotKey,
+                plant_id: CAMPAIGN_SPEC.defaultPlantId,
+                captured_at: capAt,
+                time_wib: String(apiResult.time_wib || this.formatWIBTime(capAt)),
+                hst_day: hstVal,
+                leaf_width_px: widthPx,
+                leaf_width_mm: this.calibRatio ? Math.round(widthPx * this.calibRatio * 10) / 10 : null,
+                leaf_area_px: areaPx,
+                leaf_area_mm2: this.calibRatio ? Math.round(areaPx * this.calibRatio * this.calibRatio * 10) / 10 : null,
+                quality_status: String(apiResult.quality_status || 'VALID'),
+                quality_detail: String(apiResult.quality_detail || 'Diproses oleh Vercel CV Pipeline (/api/kelompok5/capture)'),
+                processing_status: 'COMPLETED',
+                camera_id: apiResult.capture_source === 'mobile_manual_fallback' ? 'MOBILE-CAM-FALLBACK' : 'ESP32-CAM-01',
+                capture_source: String(apiResult.capture_source || 'mobile_manual_fallback'),
+                algorithm_version: 'v1.2-exg-otsu',
+                image_url: String(apiResult.image_url || ''),
+                mask_url: String(apiResult.mask_url || ''),
+                overlay_url: String(apiResult.overlay_url || '')
+            };
+            const existingIdx = this.records.findIndex(r => r.slot_key === slotKey || r.image_id === record.image_id);
+            if (existingIdx >= 0) {
+                this.records[existingIdx] = record;
+            } else {
+                this.records.unshift(record);
+            }
+            this.notify();
+            return record;
         }
 
         async executeAutomatedCapture(slotKey) {
@@ -279,14 +325,37 @@
             try {
                 const S = window.ConfigStore ? window.ConfigStore.get() : {};
                 const camHost = S.camIp || '';
+                const isHttps = typeof window !== 'undefined' && window.location && window.location.protocol === 'https:';
                 let capturedRecord = null;
 
-                if (camHost && window.SecurityUtils && window.SecurityUtils.isValidCameraHost(camHost)) {
+                if (isHttps) {
+                    capturedRecord = {
+                        image_id: `err_${Date.now()}`,
+                        slot_key: slotKey,
+                        plant_id: CAMPAIGN_SPEC.defaultPlantId,
+                        captured_at: Date.now(),
+                        time_wib: this.formatWIBTime(Date.now()),
+                        hst_day: this.currentHST,
+                        leaf_width_px: 0,
+                        leaf_width_mm: null,
+                        leaf_area_px: 0,
+                        leaf_area_mm2: null,
+                        quality_status: 'INVALID_OFFLINE',
+                        quality_detail: 'Mixed Content & Private Network Access memblokir HTTP kamera lokal dari halaman HTTPS. Gunakan Upload Foto HP (CV Vercel).',
+                        processing_status: 'FAILED',
+                        camera_id: 'ESP32-CAM-01',
+                        algorithm_version: 'v1.2-exg-otsu',
+                        image_url: '',
+                        mask_url: '',
+                        overlay_url: ''
+                    };
+                } else if (camHost && window.SecurityUtils && window.SecurityUtils.isValidCameraHost(camHost)) {
                     capturedRecord = await this.fetchCameraSnapshot(camHost);
                 } else {
                     console.log(`[LeafGrowth] Capture slot ${slotKey}: Host ESP32-CAM belum diatur/tidak valid. Mencatat status offline.`);
                     capturedRecord = {
                         image_id: `err_${Date.now()}`,
+                        slot_key: slotKey,
                         plant_id: CAMPAIGN_SPEC.defaultPlantId,
                         captured_at: Date.now(),
                         time_wib: this.formatWIBTime(Date.now()),
@@ -310,10 +379,12 @@
                     this.records.unshift(capturedRecord);
                     this.notify();
                 }
+                return capturedRecord;
             } catch (err) {
                 console.warn('[LeafGrowth] Capture execution error:', err);
                 const failedRecord = {
                     image_id: `err_${Date.now()}`,
+                    slot_key: slotKey,
                     plant_id: CAMPAIGN_SPEC.defaultPlantId,
                     captured_at: Date.now(),
                     time_wib: this.formatWIBTime(Date.now()),
@@ -333,6 +404,7 @@
                 };
                 this.records.unshift(failedRecord);
                 this.notify();
+                return failedRecord;
             } finally {
                 this.isCapturing = false;
             }
@@ -440,12 +512,29 @@
             }
 
             if (btnCSV) btnCSV.addEventListener('click', () => this.downloadCSV());
+            const btnGrowthMobile = document.getElementById('btnGrowthMobileUpload');
+            if (btnGrowthMobile) {
+                btnGrowthMobile.addEventListener('click', () => {
+                    if (window.ManualCaptureUploader && typeof window.ManualCaptureUploader.openMobilePicker === 'function') {
+                        window.ManualCaptureUploader.openMobilePicker();
+                    }
+                });
+            }
             if (btnManual) {
                 btnManual.addEventListener('click', async () => {
                     const key = this.getSlotKeyFromTimestamp(Date.now());
-                    await this.executeAutomatedCapture(key);
+                    const rec = await this.executeAutomatedCapture(key);
                     if (window.Dashboard && window.Dashboard.toast) {
-                        window.Dashboard.toast('Capture slot dieksekusi & dianalisis.', 'emerald');
+                        if (rec && rec.processing_status !== 'FAILED') {
+                            window.Dashboard.toast('Capture slot lokal dieksekusi.', 'emerald');
+                        } else if (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') {
+                            window.Dashboard.toast('HTTP kamera lokal diblokir Mixed Content/PNA pada HTTPS. Membuka Fallback Upload Foto HP.', 'amber');
+                            if (window.ManualCaptureUploader && typeof window.ManualCaptureUploader.openMobilePicker === 'function') {
+                                window.ManualCaptureUploader.openMobilePicker();
+                            }
+                        } else {
+                            window.Dashboard.toast('Kamera lokal tidak terjangkau. Gunakan Upload Foto HP (CV Vercel).', 'rose');
+                        }
                     }
                 });
             }
@@ -923,6 +1012,547 @@
         }
     }
 
+    class ManualCaptureUploaderManager {
+        constructor() {
+            this.allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+            this.minBytes = 100;
+            this.maxBytes = 4500000; // 4.5 MB Vercel Serverless Function limit
+            this.minWidth = 64;
+            this.minHeight = 64;
+            this.maxWidth = 1600;
+            this.maxHeight = 1200;
+            this.maxPixels = 1600 * 1200;
+            this.endpoint = '/api/kelompok5/capture';
+            this.preparedPayload = null;
+            this.isUploading = false;
+        }
+
+        computeFnv1aHex(bytes) {
+            if (!bytes || typeof bytes.length !== 'number') return '811c9dc5';
+            let h = 2166136261 >>> 0;
+            for (let i = 0; i < bytes.length; i++) {
+                h ^= (bytes[i] & 0xff);
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            return (h >>> 0).toString(16).padStart(8, '0');
+        }
+
+        validateFile(file) {
+            if (!file || typeof file !== 'object') {
+                return { valid: false, code: 'EMPTY_FILE', error: 'File foto belum dipilih.' };
+            }
+            const mime = String(file.type || '').trim().toLowerCase();
+            if (!this.allowedMimeTypes.includes(mime)) {
+                return {
+                    valid: false,
+                    code: 'INVALID_MIME',
+                    error: `Tipe file '${mime || 'unknown'}' tidak didukung. Gunakan foto JPEG, PNG, atau WebP.`
+                };
+            }
+            const size = Number(file.size);
+            if (!Number.isFinite(size) || size < this.minBytes) {
+                return {
+                    valid: false,
+                    code: 'FILE_TOO_SMALL',
+                    error: `Ukuran file terlalu kecil (${size || 0} B < minimum ${this.minBytes} B).`
+                };
+            }
+            if (size > this.maxBytes) {
+                return {
+                    valid: false,
+                    code: 'FILE_TOO_LARGE',
+                    error: `Ukuran file (${(size / (1024 * 1024)).toFixed(2)} MB) melebihi batas serverless Vercel 4,5 MB.`
+                };
+            }
+            return { valid: true, code: 'OK', error: null };
+        }
+
+        validateDimensions(width, height) {
+            const w = Number(width);
+            const h = Number(height);
+            if (!Number.isFinite(w) || !Number.isFinite(h) ||
+                w < this.minWidth || h < this.minHeight ||
+                w > this.maxWidth || h > this.maxHeight ||
+                (w * h) > this.maxPixels) {
+                return {
+                    valid: false,
+                    code: 'INVALID_DIMENSIONS',
+                    error: `Dimensi citra ${w}x${h} di luar batas (${this.minWidth}x${this.minHeight} .. ${this.maxWidth}x${this.maxHeight}).`
+                };
+            }
+            return { valid: true, code: 'OK', error: null };
+        }
+
+        computeWibSlotMeta(epochMs = Date.now()) {
+            const ts = Number(epochMs);
+            const wibOffsetMs = 7 * 3600 * 1000;
+            const wibDate = new Date(ts + wibOffsetMs);
+            const year = wibDate.getUTCFullYear();
+            const month = String(wibDate.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(wibDate.getUTCDate()).padStart(2, '0');
+            const hours = wibDate.getUTCHours();
+            const minutes = wibDate.getUTCMinutes();
+            const seconds = wibDate.getUTCSeconds();
+            const slotMinute = Math.floor(minutes / 10) * 10;
+            const hhStr = String(hours).padStart(2, '0');
+            const mmStr = String(slotMinute).padStart(2, '0');
+            const slotKey = `${year}-${month}-${day}_${hhStr}:${mmStr}`;
+
+            const totalMinutes = hours * 60 + minutes;
+            const inScheduleWindow = (totalMinutes >= 420 && totalMinutes <= 1010); // 07:00 .. 16:50 WIB
+            const slotEpochMs = Date.UTC(year, wibDate.getUTCMonth(), wibDate.getUTCDate(), hours, slotMinute, 0, 0) - wibOffsetMs;
+
+            return {
+                slotKey,
+                capturedAtMs: ts,
+                slotEpochMs,
+                inScheduleWindow,
+                wibFormatted: `${year}-${month}-${day} ${hhStr}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} WIB`
+            };
+        }
+
+        diagnoseCameraFailure({ protocol, camHost, error, hasImageFeed }) {
+            const proto = String(protocol || (typeof window !== 'undefined' && window.location ? window.location.protocol : 'http:')).toLowerCase();
+            const hostLabel = camHost || '192.168.x.x';
+            const errName = error && error.name ? String(error.name) : '';
+            const errMsg = error && error.message ? String(error.message) : '';
+
+            if (proto === 'https:') {
+                return {
+                    reason: 'HTTPS_MIXED_CONTENT_AND_PNA',
+                    shortToast: 'Stream HTTP lokal diblokir Mixed Content/Private Network Access pada HTTPS. Gunakan Kamera HP / Upload Foto.',
+                    detail: `Halaman HTTPS Vercel tidak dapat mengakses HTTP kamera lokal (http://${hostLabel}) karena kebijakan Mixed Content dan Private Network Access (CORS-RFC1918), serta kamera lokal tidak dapat dijangkau lintas jaringan tanpa HTTPS tunnel. Gunakan Fallback Kamera HP di bawah untuk mengirim foto langsung ke endpoint CV Vercel.`
+                };
+            }
+            if (errName === 'SecurityError' || /tainted|cross-origin|cors/i.test(errMsg)) {
+                return {
+                    reason: 'CANVAS_CORS_TAINTED',
+                    shortToast: 'Canvas video terkena pembatasan Cross-Origin. Mengalihkan ke snapshot /capture atau Kamera HP.',
+                    detail: `Elemen <canvas> terkena taint cross-origin saat membaca stream MJPEG (${hostLabel}). Gunakan snapshot HTTP /capture atau Fallback Kamera HP.`
+                };
+            }
+            if (!hasImageFeed) {
+                return {
+                    reason: 'NO_ACTIVE_STREAM',
+                    shortToast: 'Feed kamera lokal belum aktif. Membuka opsi Kamera HP / Upload Foto.',
+                    detail: `Feed video ESP32-CAM (${hostLabel}) belum aktif atau kamera berada di jaringan berbeda. Ambil atau pilih foto dari perangkat Anda untuk diproses di server CV Vercel.`
+                };
+            }
+            return {
+                reason: 'LOCAL_CAMERA_UNREACHABLE',
+                shortToast: 'Kamera lokal tidak merespons. Gunakan Fallback Kamera HP / Upload Foto.',
+                detail: `Kamera lokal (${hostLabel}) tidak merespons permintaan snapshot. Gunakan Fallback Kamera HP untuk memproses citra melalui server CV Vercel.`
+            };
+        }
+
+        buildCaptureHeaders({ jpegBytes, slotKey, capturedAtMs, hstDay, token, captureSource = 'mobile_manual_fallback' }) {
+            if (!jpegBytes || typeof jpegBytes.length !== 'number' || jpegBytes.length < this.minBytes) {
+                throw new Error('Payload JPEG kosong atau di bawah batas minimum 100 byte.');
+            }
+            if (jpegBytes.length > this.maxBytes) {
+                throw new Error('Payload JPEG melebihi batas 4,5 MB Vercel.');
+            }
+            if (jpegBytes[0] !== 0xff || jpegBytes[1] !== 0xd8 || jpegBytes[2] !== 0xff) {
+                throw new Error('Payload bukan citra JPEG valid (magic bytes 0xFFD8FF tidak cocok).');
+            }
+            const cleanToken = String(token || '').trim();
+            if (!cleanToken) {
+                throw new Error('Token autentikasi CAPTURE_SHARED_TOKEN wajib diisi.');
+            }
+            const hstInt = parseInt(String(hstDay), 10);
+            if (!Number.isFinite(hstInt) || hstInt < 1 || hstInt > 42) {
+                throw new Error('Hari Setelah Tanam (HST) wajib berada pada rentang 1–42.');
+            }
+            const fnv1a = this.computeFnv1aHex(jpegBytes);
+            return {
+                fnv1a,
+                fileSize: jpegBytes.length,
+                headers: {
+                    'Content-Type': 'image/jpeg',
+                    'X-Kelompok': 'Kelompok 5',
+                    'X-Slot-Key': String(slotKey).trim(),
+                    'X-Captured-At': String(capturedAtMs),
+                    'X-HST-Day': String(hstInt),
+                    'X-File-Size': String(jpegBytes.length),
+                    'X-Checksum-FNV1A': fnv1a,
+                    'X-Capture-Token': cleanToken,
+                    'X-Capture-Source': captureSource
+                }
+            };
+        }
+
+        async uploadJpegToVercel({
+            jpegBytes,
+            width,
+            height,
+            hstDay,
+            token,
+            timestampMs = Date.now(),
+            slotKeyOverride = null,
+            captureSource = 'mobile_manual_fallback',
+            endpoint = this.endpoint,
+            fetchImpl = (typeof fetch === 'function' ? fetch : null)
+        }) {
+            if (width !== undefined && height !== undefined) {
+                const dimCheck = this.validateDimensions(width, height);
+                if (!dimCheck.valid) {
+                    return { ok: false, status: 422, error: dimCheck.error, code: dimCheck.code };
+                }
+            }
+
+            const slotMeta = this.computeWibSlotMeta(timestampMs);
+            const resolvedSlotKey = slotKeyOverride ? String(slotKeyOverride).trim() : slotMeta.slotKey;
+
+            let built;
+            try {
+                built = this.buildCaptureHeaders({
+                    jpegBytes,
+                    slotKey: resolvedSlotKey,
+                    capturedAtMs: slotMeta.capturedAtMs,
+                    hstDay,
+                    token,
+                    captureSource
+                });
+            } catch (validationErr) {
+                return {
+                    ok: false,
+                    status: 400,
+                    error: validationErr.message || String(validationErr),
+                    code: 'CLIENT_VALIDATION_ERROR'
+                };
+            }
+
+            if (!fetchImpl) {
+                return {
+                    ok: false,
+                    status: 503,
+                    error: 'Fetch API tidak tersedia pada lingkungan ini.',
+                    code: 'NO_FETCH_API'
+                };
+            }
+
+            this.isUploading = true;
+            try {
+                const response = await fetchImpl(endpoint, {
+                    method: 'POST',
+                    headers: built.headers,
+                    body: jpegBytes
+                });
+
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch (_) {
+                    payload = { ok: false, confirmed: false, error: `Respons server bukan JSON valid (HTTP ${response.status})` };
+                }
+
+                if (response.status === 200 && payload && payload.ok === true && payload.confirmed === true) {
+                    let growthRecord = null;
+                    if (window.GrowthStore && typeof window.GrowthStore.ingestServerlessCaptureResult === 'function') {
+                        growthRecord = window.GrowthStore.ingestServerlessCaptureResult(payload);
+                    }
+                    return {
+                        ok: true,
+                        status: 200,
+                        duplicate: Boolean(payload.duplicate),
+                        data: payload,
+                        record: growthRecord,
+                        fnv1a: built.fnv1a,
+                        slotKey: resolvedSlotKey
+                    };
+                }
+
+                const serverErr = (payload && payload.error) ? payload.error : `Server menolak upload (HTTP ${response.status})`;
+                return {
+                    ok: false,
+                    status: response.status,
+                    error: serverErr,
+                    data: payload,
+                    code: `HTTP_${response.status}`
+                };
+            } catch (netErr) {
+                return {
+                    ok: false,
+                    status: 0,
+                    error: `Gagal menghubungi endpoint ${endpoint}: ${netErr.message || netErr}`,
+                    code: 'NETWORK_ERROR'
+                };
+            } finally {
+                this.isUploading = false;
+            }
+        }
+
+        async transcodeFileToJpeg(file) {
+            const check = this.validateFile(file);
+            if (!check.valid) {
+                throw new Error(check.error);
+            }
+
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(new Error('Gagal membaca file gambar dari perangkat.'));
+                reader.readAsDataURL(file);
+            });
+
+            const img = await new Promise((resolve, reject) => {
+                const el = new Image();
+                el.onload = () => resolve(el);
+                el.onerror = () => reject(new Error('File bukan gambar valid atau gagal didekode.'));
+                el.src = dataUrl;
+            });
+
+            let targetW = img.naturalWidth || img.width;
+            let targetH = img.naturalHeight || img.height;
+            if (targetW < this.minWidth || targetH < this.minHeight) {
+                throw new Error(`Resolusi foto terlalu kecil (${targetW}x${targetH} px; minimum ${this.minWidth}x${this.minHeight} px).`);
+            }
+
+            // Scale down proportionally to fit within SVGA/UXGA bounds (target max 800x600 for fast CV & <4.5MB)
+            const maxTargetW = 800;
+            const maxTargetH = 600;
+            if (targetW > maxTargetW || targetH > maxTargetH) {
+                const scale = Math.min(maxTargetW / targetW, maxTargetH / targetH);
+                targetW = Math.max(this.minWidth, Math.round(targetW * scale));
+                targetH = Math.max(this.minHeight, Math.round(targetH * scale));
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW;
+            canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+
+            const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+            const base64Part = jpegDataUrl.split(',')[1] || '';
+            const binStr = atob(base64Part);
+            const bytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) {
+                bytes[i] = binStr.charCodeAt(i) & 0xff;
+            }
+
+            const dimCheck = this.validateDimensions(targetW, targetH);
+            if (!dimCheck.valid) {
+                throw new Error(dimCheck.error);
+            }
+            if (bytes.length < this.minBytes || bytes.length > this.maxBytes) {
+                throw new Error(`Ukuran hasil kompresi JPEG (${bytes.length} B) di luar batas aman.`);
+            }
+
+            const fnv1a = this.computeFnv1aHex(bytes);
+            return {
+                bytes,
+                width: targetW,
+                height: targetH,
+                origWidth: img.naturalWidth || img.width,
+                origHeight: img.naturalHeight || img.height,
+                fileSize: bytes.length,
+                fnv1a,
+                previewDataUrl: jpegDataUrl,
+                fileName: file.name || 'mobile-capture.jpg'
+            };
+        }
+
+        setStatusUI(message, state = 'idle') {
+            const statusEl = typeof document !== 'undefined' ? document.getElementById('manualUploadStatus') : null;
+            if (!statusEl) return;
+            statusEl.textContent = message;
+            statusEl.classList.remove('is-loading', 'is-success', 'is-error');
+            if (state === 'loading') statusEl.classList.add('is-loading');
+            else if (state === 'success') statusEl.classList.add('is-success');
+            else if (state === 'error') statusEl.classList.add('is-error');
+        }
+
+        updateSlotStatusUI() {
+            if (typeof document === 'undefined') return;
+            const slotBadge = document.getElementById('manualCaptureSlotBadge');
+            const winBadge = document.getElementById('manualCaptureWindowState');
+            const meta = this.computeWibSlotMeta(Date.now());
+            if (slotBadge) {
+                slotBadge.textContent = `Slot: ${meta.slotKey}`;
+            }
+            if (winBadge) {
+                if (meta.inScheduleWindow) {
+                    winBadge.textContent = `Aktif (${meta.slotKey} WIB)`;
+                    winBadge.className = 'badge-tag emerald tabular-nums';
+                } else {
+                    winBadge.textContent = `Di Luar Jam Capture (${meta.slotKey} WIB · Buka 07:00–16:50)`;
+                    winBadge.className = 'badge-tag amber tabular-nums';
+                }
+            }
+        }
+
+        openMobilePicker(diagnosticMessage = null) {
+            if (typeof document === 'undefined') return;
+            const panel = document.getElementById('manualUploadPanel');
+            const fileInput = document.getElementById('camMobileInput');
+            if (diagnosticMessage) {
+                this.setStatusUI(diagnosticMessage, 'error');
+            }
+            if (panel && typeof panel.scrollIntoView === 'function') {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            if (fileInput) {
+                fileInput.click();
+            }
+        }
+
+        bindDOM() {
+            if (typeof document === 'undefined') return;
+            const fileInput = document.getElementById('camMobileInput');
+            const btnPickTop = document.getElementById('btnCamMobilePick');
+            const btnPickCard = document.getElementById('btnManualSelectFile');
+            const btnSubmit = document.getElementById('btnManualUploadSubmit');
+            const tokenInput = document.getElementById('manualCaptureToken');
+            const hstInput = document.getElementById('manualCaptureHst');
+            const previewImg = document.getElementById('manualUploadPreviewImg');
+            const previewEmpty = document.getElementById('manualUploadPreviewEmpty');
+            const fileMetaEl = document.getElementById('manualUploadFileMeta');
+
+            if (tokenInput) {
+                try {
+                    const savedTok = sessionStorage.getItem('selada_capture_token');
+                    if (savedTok) tokenInput.value = savedTok;
+                    tokenInput.addEventListener('change', () => {
+                        sessionStorage.setItem('selada_capture_token', tokenInput.value.trim());
+                    });
+                } catch (_) {}
+            }
+
+            if (hstInput && window.GrowthStore) {
+                hstInput.value = String(window.GrowthStore.currentHST || 1);
+            }
+
+            this.updateSlotStatusUI();
+            setInterval(() => this.updateSlotStatusUI(), 15000);
+
+            const triggerPicker = () => {
+                if (fileInput) {
+                    fileInput.value = '';
+                    fileInput.click();
+                }
+            };
+
+            if (btnPickTop) btnPickTop.addEventListener('click', triggerPicker);
+            if (btnPickCard) btnPickCard.addEventListener('click', triggerPicker);
+
+            if (fileInput) {
+                fileInput.addEventListener('change', async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file) return;
+                    this.setStatusUI('Memvalidasi & menormalisasi foto ke format JPEG...', 'loading');
+                    if (btnSubmit) btnSubmit.disabled = true;
+
+                    try {
+                        const prepared = await this.transcodeFileToJpeg(file);
+                        this.preparedPayload = prepared;
+
+                        if (previewImg) {
+                            previewImg.src = prepared.previewDataUrl;
+                            previewImg.hidden = false;
+                        }
+                        if (previewEmpty) previewEmpty.hidden = true;
+                        if (fileMetaEl) {
+                            fileMetaEl.hidden = false;
+                            fileMetaEl.textContent = `${prepared.width}×${prepared.height} px · ${(prepared.fileSize / 1024).toFixed(1)} KB · FNV-1a: ${prepared.fnv1a}`;
+                        }
+                        if (btnSubmit) btnSubmit.disabled = false;
+
+                        // Also save preview to session gallery so user immediately gets their snapshot
+                        if (window.Dashboard && Array.isArray(window.Dashboard.gallery)) {
+                            window.Dashboard.gallery.unshift({ url: prepared.previewDataUrl, t: Date.now() });
+                            if (window.Dashboard.gallery.length > 12) window.Dashboard.gallery.pop();
+                            if (typeof window.Dashboard.renderGalleryUI === 'function') {
+                                window.Dashboard.renderGalleryUI();
+                            }
+                        }
+
+                        const slotMeta = this.computeWibSlotMeta(Date.now());
+                        this.setStatusUI(
+                            `Foto siap dikirim (${(prepared.fileSize / 1024).toFixed(1)} KB, FNV-1a ${prepared.fnv1a}). Slot target: ${slotMeta.slotKey} WIB.`,
+                            'idle'
+                        );
+                        if (window.Dashboard && window.Dashboard.toast) {
+                            window.Dashboard.toast('Foto berhasil dimuat ke preview & galeri sesi.', 'emerald');
+                        }
+                    } catch (err) {
+                        this.preparedPayload = null;
+                        if (previewImg) previewImg.hidden = true;
+                        if (previewEmpty) previewEmpty.hidden = false;
+                        if (fileMetaEl) fileMetaEl.hidden = true;
+                        if (btnSubmit) btnSubmit.disabled = true;
+                        const msg = err.message || String(err);
+                        this.setStatusUI(msg, 'error');
+                        if (window.Dashboard && window.Dashboard.toast) {
+                            window.Dashboard.toast(msg, 'rose');
+                        }
+                    }
+                });
+            }
+
+            if (btnSubmit) {
+                btnSubmit.addEventListener('click', async () => {
+                    if (!this.preparedPayload || this.isUploading) return;
+                    const token = tokenInput ? tokenInput.value.trim() : '';
+                    const hstDay = hstInput ? parseInt(hstInput.value, 10) : 1;
+
+                    if (!token) {
+                        const msg = 'Masukkan CAPTURE_SHARED_TOKEN terlebih dahulu untuk autentikasi endpoint Vercel.';
+                        this.setStatusUI(msg, 'error');
+                        if (tokenInput) tokenInput.focus();
+                        if (window.Dashboard && window.Dashboard.toast) {
+                            window.Dashboard.toast(msg, 'amber');
+                        }
+                        return;
+                    }
+
+                    try {
+                        sessionStorage.setItem('selada_capture_token', token);
+                    } catch (_) {}
+
+                    btnSubmit.disabled = true;
+                    this.setStatusUI('Mengirim JPEG & menjalankan segmentasi CV ExG Otsu di Vercel...', 'loading');
+
+                    const result = await this.uploadJpegToVercel({
+                        jpegBytes: this.preparedPayload.bytes,
+                        width: this.preparedPayload.width,
+                        height: this.preparedPayload.height,
+                        hstDay,
+                        token,
+                        timestampMs: Date.now(),
+                        captureSource: 'mobile_manual_fallback'
+                    });
+
+                    btnSubmit.disabled = false;
+
+                    if (result.ok) {
+                        const d = result.data || {};
+                        const dupLabel = result.duplicate ? ' (Slot sudah terkonfirmasi sebelumnya / idempoten)' : '';
+                        const msg = `Berhasil diproses CV Vercel${dupLabel}: Slot ${d.slot_key} · Lebar ${d.leaf_width_px ?? 0} px · Luas ${d.leaf_area_px ?? 0} px² · Status ${d.quality_status || 'VALID'}.`;
+                        this.setStatusUI(msg, 'success');
+                        if (window.Dashboard && window.Dashboard.toast) {
+                            window.Dashboard.toast(msg, 'emerald');
+                        }
+                    } else {
+                        const msg = `Gagal memproses foto (HTTP ${result.status || 'ERR'}): ${result.error}`;
+                        this.setStatusUI(msg, 'error');
+                        if (window.Dashboard && window.Dashboard.toast) {
+                            window.Dashboard.toast(msg, 'rose');
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     window.GrowthStore = new LeafGrowthManager();
+    window.ManualCaptureUploader = new ManualCaptureUploaderManager();
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => window.ManualCaptureUploader.bindDOM());
+        } else {
+            window.ManualCaptureUploader.bindDOM();
+        }
+    }
 
 })(window);

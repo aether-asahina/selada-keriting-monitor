@@ -3673,3 +3673,98 @@ pre {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* Mobile Camera Fallback & Vercel CV Upload Panel */
+.manual-upload-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 768px) {
+    .manual-upload-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.manual-preview-box {
+    background-color: #090d16;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    min-height: 185px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    padding: 10px;
+}
+
+.manual-preview-box img {
+    width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    border-radius: var(--radius-xs);
+}
+
+.manual-preview-empty {
+    text-align: center;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.manual-preview-empty b {
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.manual-file-meta {
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px 8px;
+    background-color: #111827;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-xs);
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.45;
+}
+
+.manual-upload-status {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background-color: #090d16;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-xs);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.manual-upload-status.is-loading {
+    border-color: rgba(59, 130, 246, 0.45);
+    color: #93c5fd;
+    background: linear-gradient(90deg, #090d16 25%, #111827 50%, #090d16 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s infinite;
+}
+
+.manual-upload-status.is-success {
+    border-color: rgba(16, 185, 129, 0.45);
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.08);
+}
+
+.manual-upload-status.is-error {
+    border-color: rgba(244, 63, 94, 0.45);
+    color: #f43f5e;
+    background-color: rgba(244, 63, 94, 0.08);
+}

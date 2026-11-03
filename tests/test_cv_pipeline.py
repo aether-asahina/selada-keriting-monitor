@@ -1078,6 +1078,40 @@ class TestVercelServerlessCaptureUnitMock(unittest.TestCase):
             parsed_m = json.loads(resp_m.split("\r\n\r\n", 1)[1])
             self.assertFalse(parsed_m["confirmed"])
 
+    def test_mobile_manual_fallback_upload_validation_and_source_whitelist(self):
+        # 1. Valid manual mobile upload with X-Capture-Source: mobile_manual_fallback
+        slot_mobile = "2026-11-03_11:10"
+        hdrs_mobile = self._default_headers(slot_mobile)
+        hdrs_mobile["X-Capture-Source"] = "mobile_manual_fallback"
+        st_ok, body_ok = self.ingestor.ingest(raw_bytes=self.raw_bytes, headers=hdrs_mobile)
+        self.assertEqual(st_ok, 200)
+        self.assertTrue(body_ok["ok"])
+        self.assertTrue(body_ok["confirmed"])
+        self.assertEqual(body_ok["capture_source"], "mobile_manual_fallback")
+        self.assertIn("leaf_width_px", body_ok)
+        self.assertIn("leaf_area_px", body_ok)
+        self.assertGreater(body_ok["leaf_width_px"], 0)
+        self.assertGreater(body_ok["leaf_area_px"], 0)
+
+        saved_meta = self.rtdb_transport.store.get("kelompok5/growth_metadata/2026-11-03_11-10")
+        self.assertIsNotNone(saved_meta)
+        self.assertEqual(saved_meta["capture_source"], "mobile_manual_fallback")
+        self.assertEqual(saved_meta["source_file_name"], "mobile-manual-upload.jpg")
+
+        # 2. Duplicate manual upload on the same confirmed slot returns HTTP 200 idempotently with metrics
+        st_dup, body_dup = self.ingestor.ingest(raw_bytes=self.raw_bytes, headers=hdrs_mobile)
+        self.assertEqual(st_dup, 200)
+        self.assertTrue(body_dup["confirmed"])
+        self.assertTrue(body_dup["duplicate"])
+        self.assertEqual(body_dup["leaf_width_px"], body_ok["leaf_width_px"])
+
+        # 3. Unrecognized X-Capture-Source header is rejected with HTTP 422
+        hdrs_bad_src = self._default_headers("2026-11-03_11:20")
+        hdrs_bad_src["X-Capture-Source"] = "untrusted_bypass_source"
+        st_bad_src, body_bad_src = self.ingestor.ingest(raw_bytes=self.raw_bytes, headers=hdrs_bad_src)
+        self.assertEqual(st_bad_src, 422)
+        self.assertFalse(body_bad_src["confirmed"])
+
 
 if __name__ == "__main__":
     unittest.main()

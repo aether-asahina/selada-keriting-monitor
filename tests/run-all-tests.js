@@ -1393,9 +1393,262 @@ try {
 }
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 27: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// TEST SUITE 27: MOBILE CAMERA FALLBACK, FILE VALIDATION, API ERRORS & CORS/MIXED-CONTENT
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [27] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
+console.log(`\n${C.bold}--- [27] Mobile Camera Upload Fallback, File Validation, API Failures & CORS/Mixed Content ---${C.reset}`);
+
+(async () => {
+    try {
+        const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+        const dashJs = fs.readFileSync(path.join(rootDir, 'js/dashboard.js'), 'utf8');
+        const uploader = sandbox.window.ManualCaptureUploader;
+
+        // 1. HTML Contract: crossorigin="anonymous" on #camimg + <input type="file" accept="image/*" capture="environment">
+        const hasCrossOriginImg = /<img[^>]+id="camimg"[^>]+crossorigin="anonymous"/i.test(indexHtml);
+        const hasMobileInput = /<input[^>]+type="file"[^>]+id="camMobileInput"[^>]+accept="image\/\*"[^>]+capture="environment"/i.test(indexHtml);
+        const hasFallbackPanel = indexHtml.includes('id="manualUploadPanel"') &&
+            indexHtml.includes('id="manualUploadPreviewImg"') &&
+            indexHtml.includes('id="manualCaptureToken"') &&
+            indexHtml.includes('id="manualCaptureHst"') &&
+            indexHtml.includes('id="btnManualUploadSubmit"') &&
+            indexHtml.includes('id="manualUploadStatus"');
+        const hasLocalStreamPreserved = dashJs.includes('corsFallbackTried') &&
+            dashJs.includes("removeAttribute('crossorigin')") &&
+            dashJs.includes('/capture?t=');
+        if (hasCrossOriginImg && hasMobileInput && hasFallbackPanel && hasLocalStreamPreserved) {
+            pass('Camera-HTML-And-Stream-Fallback', 'index.html & dashboard.js define crossorigin="anonymous" with MJPEG fallback, HTTP /capture fallback, and <input type="file" accept="image/*" capture="environment">');
+        } else {
+            fail('Camera-HTML-And-Stream-Fallback', 'Missing crossorigin="anonymous", mobile capture input, or stream fallback logic');
+        }
+
+        // 2. File Validation (MIME type, empty/small <100B, oversized >4.5MB, valid JPEG/PNG/WebP)
+        const vEmpty = uploader.validateFile(null);
+        const vBadMime1 = uploader.validateFile({ name: 'exploit.svg', type: 'image/svg+xml', size: 4096 });
+        const vBadMime2 = uploader.validateFile({ name: 'doc.pdf', type: 'application/pdf', size: 4096 });
+        const vTooSmall = uploader.validateFile({ name: 'tiny.jpg', type: 'image/jpeg', size: 42 });
+        const vTooLarge = uploader.validateFile({ name: 'huge.jpg', type: 'image/jpeg', size: 4500001 });
+        const vValidJpeg = uploader.validateFile({ name: 'leaf.jpg', type: 'image/jpeg', size: 125000 });
+        const vValidPng = uploader.validateFile({ name: 'leaf.png', type: 'image/png', size: 250000 });
+        const vValidWebp = uploader.validateFile({ name: 'leaf.webp', type: 'image/webp', size: 180000 });
+        if (!vEmpty.valid && vEmpty.code === 'EMPTY_FILE' &&
+            !vBadMime1.valid && vBadMime1.code === 'INVALID_MIME' &&
+            !vBadMime2.valid && vBadMime2.code === 'INVALID_MIME' &&
+            !vTooSmall.valid && vTooSmall.code === 'FILE_TOO_SMALL' &&
+            !vTooLarge.valid && vTooLarge.code === 'FILE_TOO_LARGE' &&
+            vValidJpeg.valid && vValidPng.valid && vValidWebp.valid) {
+            pass('Manual-File-Validation', 'Rejects null, SVG/PDF MIME types, <100B, and >4.5MB files while accepting valid JPEG/PNG/WebP');
+        } else {
+            fail('Manual-File-Validation', 'File validation failed on MIME or size boundaries');
+        }
+
+        // 3. Dimension Bounds Validation (64x64 .. 1600x1200)
+        const dSmall = uploader.validateDimensions(32, 32);
+        const dLarge = uploader.validateDimensions(1920, 1080);
+        const dOk = uploader.validateDimensions(800, 600);
+        if (!dSmall.valid && !dLarge.valid && dOk.valid) {
+            pass('Manual-Dimension-Validation', 'Enforces 64x64 .. 1600x1200 pixel bounds before CV upload');
+        } else {
+            fail('Manual-Dimension-Validation', 'Pixel dimension validation failed');
+        }
+
+        // 4. 32-bit FNV-1a Checksum Parity & WIB Slot Window Calculation
+        const fnvEmpty = uploader.computeFnv1aHex(new Uint8Array([]));
+        const fnvFoobar = uploader.computeFnv1aHex(new Uint8Array([102, 111, 111, 98, 97, 114])); // "foobar" -> bf9cf968
+        // 2026-11-03 08:23:00 WIB = 2026-11-03 01:23:00 UTC
+        const tsValidWib = Date.UTC(2026, 10, 3, 1, 23, 0);
+        // 2026-11-03 21:15:00 WIB = 2026-11-03 14:15:00 UTC
+        const tsOutsideWib = Date.UTC(2026, 10, 3, 14, 15, 0);
+        const slotValid = uploader.computeWibSlotMeta(tsValidWib);
+        const slotOutside = uploader.computeWibSlotMeta(tsOutsideWib);
+        if (fnvEmpty === '811c9dc5' &&
+            fnvFoobar === 'bf9cf968' &&
+            slotValid.slotKey === '2026-11-03_08:20' &&
+            slotValid.inScheduleWindow === true &&
+            slotOutside.slotKey === '2026-11-03_21:10' &&
+            slotOutside.inScheduleWindow === false) {
+            pass('Manual-FNV1a-And-WIB-Slot', 'FNV-1a matches 32-bit reference vectors (bf9cf968) and WIB 10-min slot calculation accurately detects 07:00–16:50 window');
+        } else {
+            fail('Manual-FNV1a-And-WIB-Slot', `Unexpected FNV-1a (${fnvFoobar}) or slot (${slotValid.slotKey})`);
+        }
+
+        // 5. Camera Failure Diagnostics (HTTPS Mixed Content & PNA vs Tainted Canvas vs Offline)
+        const diagHttps = uploader.diagnoseCameraFailure({
+            protocol: 'https:',
+            camHost: '192.168.1.23',
+            error: new Error('Failed to fetch'),
+            hasImageFeed: false
+        });
+        const taintErr = new Error('The canvas has been tainted by cross-origin data');
+        taintErr.name = 'SecurityError';
+        const diagTaint = uploader.diagnoseCameraFailure({
+            protocol: 'http:',
+            camHost: '192.168.1.23',
+            error: taintErr,
+            hasImageFeed: true
+        });
+        const diagNoFeed = uploader.diagnoseCameraFailure({
+            protocol: 'http:',
+            camHost: '192.168.1.23',
+            error: null,
+            hasImageFeed: false
+        });
+        if (diagHttps.reason === 'HTTPS_MIXED_CONTENT_AND_PNA' &&
+            diagHttps.detail.includes('Mixed Content') &&
+            diagHttps.detail.includes('Private Network Access') &&
+            diagTaint.reason === 'CANVAS_CORS_TAINTED' &&
+            diagNoFeed.reason === 'NO_ACTIVE_STREAM') {
+            pass('Camera-Fallback-Diagnostics', 'Accurately distinguishes HTTPS Mixed Content + Private Network Access, CORS canvas tainting, and inactive local stream');
+        } else {
+            fail('Camera-Fallback-Diagnostics', 'Camera diagnostic classification mismatch');
+        }
+
+        // 6. Manual Upload Client & API Failure Handling (400 / 401 / 409 / 422 / 503 / Network Error) + Success Ingestion
+        const sampleJpeg = new Uint8Array(256);
+        sampleJpeg[0] = 0xff;
+        sampleJpeg[1] = 0xd8;
+        sampleJpeg[2] = 0xff;
+        for (let i = 3; i < sampleJpeg.length; i++) sampleJpeg[i] = (i * 17) & 0xff;
+
+        // 6a. Missing token rejected before network call
+        const resNoToken = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 12,
+            token: '   ',
+            timestampMs: tsValidWib
+        });
+        // 6b. Invalid HST (45 > 42) rejected
+        const resBadHst = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 45,
+            token: 'secret-tok',
+            timestampMs: tsValidWib
+        });
+        // 6c. Server HTTP 401 Unauthorized
+        const res401 = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 12,
+            token: 'wrong-token',
+            timestampMs: tsValidWib,
+            fetchImpl: async () => ({
+                status: 401,
+                json: async () => ({ ok: false, confirmed: false, error: 'Unauthorized: invalid capture token' })
+            })
+        });
+        // 6d. Server HTTP 422 Outside Schedule Window
+        const res422 = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 12,
+            token: 'valid-token',
+            timestampMs: tsOutsideWib,
+            fetchImpl: async () => ({
+                status: 422,
+                json: async () => ({ ok: false, confirmed: false, error: 'Slot 2026-11-03_21:10 is outside allowed schedule window (07:00-16:50 WIB)' })
+            })
+        });
+        // 6e. Server HTTP 409 Slot In Progress
+        const res409 = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 12,
+            token: 'valid-token',
+            timestampMs: tsValidWib,
+            fetchImpl: async () => ({
+                status: 409,
+                json: async () => ({ ok: false, confirmed: false, error: 'Slot 2026-11-03_08:20 is currently being processed by another instance' })
+            })
+        });
+        // 6f. Network failure
+        const resNetErr = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 12,
+            token: 'valid-token',
+            timestampMs: tsValidWib,
+            fetchImpl: async () => { throw new Error('ECONNRESET'); }
+        });
+
+        // 6g. Successful HTTP 200 upload verifies all headers sent and updates GrowthStore
+        let capturedReq = null;
+        const res200 = await uploader.uploadJpegToVercel({
+            jpegBytes: sampleJpeg,
+            width: 640,
+            height: 480,
+            hstDay: 14,
+            token: 'valid-prod-token',
+            timestampMs: tsValidWib,
+            fetchImpl: async (url, opts) => {
+                capturedReq = { url, opts };
+                return {
+                    status: 200,
+                    json: async () => ({
+                        ok: true,
+                        confirmed: true,
+                        kelompok: 'Kelompok 5',
+                        slot_key: '2026-11-03_08:20',
+                        image_id: 'img_20261103_0820_manual',
+                        file_size: sampleJpeg.length,
+                        fnv1a: uploader.computeFnv1aHex(sampleJpeg),
+                        checksum_fnv1a: uploader.computeFnv1aHex(sampleJpeg),
+                        quality_status: 'VALID',
+                        quality_detail: 'Kontur daun selada terdeteksi normal',
+                        leaf_width_px: 148.5,
+                        leaf_area_px: 11420,
+                        hst_day: 14,
+                        captured_at: tsValidWib,
+                        time_wib: '2026-11-03 08:23:00 WIB',
+                        capture_source: 'mobile_manual_fallback',
+                        image_url: 'https://blob.vercel-storage.com/orig.jpg',
+                        mask_url: 'https://blob.vercel-storage.com/mask.png',
+                        overlay_url: 'https://blob.vercel-storage.com/overlay.jpg'
+                    })
+                };
+            }
+        });
+
+        const hdrsSent = capturedReq ? capturedReq.opts.headers : {};
+        const hasAllRequiredHeaders = hdrsSent['Content-Type'] === 'image/jpeg' &&
+            hdrsSent['X-Kelompok'] === 'Kelompok 5' &&
+            hdrsSent['X-Slot-Key'] === '2026-11-03_08:20' &&
+            hdrsSent['X-Captured-At'] === String(tsValidWib) &&
+            hdrsSent['X-HST-Day'] === '14' &&
+            hdrsSent['X-File-Size'] === String(sampleJpeg.length) &&
+            hdrsSent['X-Checksum-FNV1A'] === uploader.computeFnv1aHex(sampleJpeg) &&
+            hdrsSent['X-Capture-Token'] === 'valid-prod-token' &&
+            hdrsSent['X-Capture-Source'] === 'mobile_manual_fallback';
+
+        const ingestedRecord = sandbox.window.GrowthStore.records.find(r => r.image_id === 'img_20261103_0820_manual');
+
+        if (!resNoToken.ok && resNoToken.status === 400 &&
+            !resBadHst.ok && resBadHst.status === 400 &&
+            !res401.ok && res401.status === 401 &&
+            !res422.ok && res422.status === 422 &&
+            !res409.ok && res409.status === 409 &&
+            !resNetErr.ok && resNetErr.status === 0 &&
+            res200.ok && res200.status === 200 &&
+            hasAllRequiredHeaders &&
+            ingestedRecord && ingestedRecord.leaf_width_px === 148.5 && ingestedRecord.leaf_area_px === 11420) {
+            pass('Manual-Upload-API-And-Ingestion', 'Handles 400/401/409/422/network errors cleanly and sends authenticated FNV-1a/slot headers to /api/kelompok5/capture, ingesting CV metrics into GrowthStore');
+        } else {
+            fail('Manual-Upload-API-And-Ingestion', 'Failed API error handling or header/GrowthStore ingestion check');
+        }
+    } catch (e) {
+        fail('Manual-Camera-Fallback-Suite', 'Unexpected error in Suite 27', e.message);
+    }
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 28: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [28] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
 
 notTested(
     'Hardware-IoT',
@@ -1446,3 +1699,4 @@ if (results.fail > 0) {
     console.log(`${C.green}ALL TESTABLE SOFTWARE, SECURITY & INTEGRITY SPECS PASSED!${C.reset}`);
     process.exit(0);
 }
+})();

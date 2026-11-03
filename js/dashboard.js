@@ -760,6 +760,14 @@
             };
 
             const camFail = () => {
+                if (camimg && camimg.getAttribute('crossorigin') && !camimg.dataset.corsFallbackTried && location.protocol === 'http:' && camimg.src) {
+                    // Preserve local MJPEG stream if browser rejects CORS on multipart/x-mixed-replace
+                    camimg.dataset.corsFallbackTried = '1';
+                    const retrySrc = camimg.src;
+                    camimg.removeAttribute('crossorigin');
+                    camimg.src = retrySrc;
+                    return;
+                }
                 this.cam.run = false;
                 if (this.cam.timer) {
                     clearTimeout(this.cam.timer);
@@ -774,8 +782,8 @@
                     window.GrowthStore.renderStorageAndSyncStatus();
                 }
                 camMsg('Feed /stream tidak terjangkau', location.protocol === 'https:'
-                    ? 'Browser memblokir stream HTTP lokal pada halaman HTTPS. Buka dashboard via HTTP lokal. Kamera mengirim foto langsung ke receiver via Wi-Fi.'
-                    : 'Kamera ESP32-CAM offline di jaringan lokal. Kamera memotret dan mengirim JPEG langsung ke server saat online.');
+                    ? 'Browser memblokir stream HTTP lokal pada halaman HTTPS (Mixed Content & Private Network Access). Gunakan tombol "Kamera HP / Upload Foto" di bawah atau buka dashboard via HTTP lokal.'
+                    : 'Kamera ESP32-CAM offline di jaringan lokal. Gunakan tombol "Kamera HP / Upload Foto" atau hubungkan kamera ke jaringan yang sama.');
             };
 
             if (camimg) {
@@ -824,6 +832,11 @@
                 camMsg('Menghubungkan ke endpoint /stream…', `http://${validatedHost}:81/stream`);
 
                 const getCamUrl = (path) => `http://${validatedHost}${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`;
+
+                if (camimg) {
+                    delete camimg.dataset.corsFallbackTried;
+                    camimg.setAttribute('crossorigin', 'anonymous');
+                }
 
                 if (this.cam.mode === 'stream') {
                     const streamUrl = getCamUrl(':81/stream');
@@ -905,23 +918,69 @@
                 this.cam.interval = Number(e.target.value);
             });
 
-            if (camSnap) camSnap.addEventListener('click', () => {
-                if (!camimg || camimg.hidden || !camimg.naturalWidth) {
-                    this.toast('Belum ada feed video untuk diambil foto.', 'amber');
-                    return;
+            if (camSnap) camSnap.addEventListener('click', async () => {
+                const hasFeed = Boolean(camimg && !camimg.hidden && camimg.naturalWidth);
+                let caughtErr = null;
+
+                if (hasFeed) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = camimg.naturalWidth;
+                    canvas.height = camimg.naturalHeight;
+                    try {
+                        canvas.getContext('2d').drawImage(camimg, 0, 0);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                        this.gallery.unshift({ url: dataUrl, t: Date.now() });
+                        if (this.gallery.length > 12) this.gallery.pop();
+                        this.renderGalleryUI();
+                        this.toast('Foto tersimpan di galeri sesi.', 'emerald');
+                        return;
+                    } catch (err) {
+                        caughtErr = err;
+                    }
                 }
-                const canvas = document.createElement('canvas');
-                canvas.width = camimg.naturalWidth;
-                canvas.height = camimg.naturalHeight;
-                try {
-                    canvas.getContext('2d').drawImage(camimg, 0, 0);
-                    const dataUrl = canvas.toDataURL('image/jpeg');
-                    this.gallery.unshift({ url: dataUrl, t: Date.now() });
-                    if (this.gallery.length > 12) this.gallery.pop();
-                    this.renderGalleryUI();
-                    this.toast('Foto tersimpan di galeri sesi.', 'emerald');
-                } catch (err) {
-                    this.toast('Gagal mengambil foto: batasan origin/CORS.', 'rose');
+
+                // Fallback 1: If on HTTP LAN and canvas was tainted or stream inactive, try fetching single JPEG from /capture with CORS
+                const configuredIp = Sec.isValidCameraHost(window.ConfigStore.get().camIp || '');
+                if (location.protocol === 'http:' && configuredIp) {
+                    try {
+                        const controller = new AbortController();
+                        const timer = setTimeout(() => controller.abort(), 4500);
+                        const res = await fetch(`http://${configuredIp}/capture?t=${Date.now()}`, {
+                            mode: 'cors',
+                            signal: controller.signal
+                        });
+                        clearTimeout(timer);
+                        if (res.ok) {
+                            const blob = await res.blob();
+                            const dataUrl = await new Promise((resolve, reject) => {
+                                const r = new FileReader();
+                                r.onload = () => resolve(String(r.result || ''));
+                                r.onerror = () => reject(new Error('FileReader gagal'));
+                                r.readAsDataURL(blob);
+                            });
+                            this.gallery.unshift({ url: dataUrl, t: Date.now() });
+                            if (this.gallery.length > 12) this.gallery.pop();
+                            this.renderGalleryUI();
+                            this.toast('Foto berhasil diambil melalui endpoint HTTP /capture lokal.', 'emerald');
+                            return;
+                        }
+                    } catch (fetchErr) {
+                        caughtErr = caughtErr || fetchErr;
+                    }
+                }
+
+                // Fallback 2: Diagnose Mixed Content / PNA / CORS / Offline and open Mobile Camera Upload Fallback
+                if (window.ManualCaptureUploader) {
+                    const diag = window.ManualCaptureUploader.diagnoseCameraFailure({
+                        protocol: location.protocol,
+                        camHost: configuredIp || window.ConfigStore.get().camIp || '',
+                        error: caughtErr,
+                        hasImageFeed: hasFeed
+                    });
+                    this.toast(diag.shortToast, 'amber');
+                    window.ManualCaptureUploader.openMobilePicker(diag.detail);
+                } else {
+                    this.toast('Stream lokal tidak tersedia pada HTTPS. Gunakan Kamera HP / Upload Foto.', 'amber');
                 }
             });
 

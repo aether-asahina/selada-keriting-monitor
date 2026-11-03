@@ -610,7 +610,7 @@
                         <article class="panel">
                             <div class="camview" id="camview">
                                 <span class="livebadge" id="livebadge" hidden>LIVE</span>
-                                <img id="camimg" alt="Tampilan video kamera selada" hidden>
+                                <img id="camimg" alt="Tampilan video kamera selada" crossorigin="anonymous" hidden>
                                 <div class="camstate" id="camstate"></div>
                                 <span class="camhint">Scroll = zoom · Seret = geser · Klik 2× = zoom cepat</span>
                                 <div class="camzoom" id="camzoom" role="group" aria-label="Zoom kamera">
@@ -622,9 +622,58 @@
                             </div>
                             <div class="camtools">
                                 <button class="btn btn-primary" type="button" id="camSnap">Ambil Foto</button>
+                                <button class="btn btn-secondary" type="button" id="btnCamMobilePick">Kamera HP / Upload Foto</button>
+                                <input type="file" id="camMobileInput" accept="image/*" capture="environment" hidden>
                                 <button class="btn btn-secondary" type="button" id="camReload">Muat Ulang</button>
                                 <button class="btn btn-secondary" type="button" id="camFull">Layar Penuh</button>
                                 <button class="btn btn-secondary" type="button" id="camOff" hidden>Putuskan</button>
+                            </div>
+                        </article>
+
+                        <article class="panel" id="manualUploadPanel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Fallback Kamera HP &amp; Upload CV Vercel</h2>
+                                    <p class="hint">Gunakan kamera HP langsung bila stream lokal ESP32-CAM terblokir Mixed Content/Private Network Access pada HTTPS atau berada di luar jaringan LAN.</p>
+                                </div>
+                                <span class="badge-tag emerald tabular-nums" id="manualCaptureSlotBadge">Slot WIB</span>
+                            </div>
+                            <div class="manual-upload-grid">
+                                <div class="manual-preview-box" id="manualUploadPreviewWrap">
+                                    <img id="manualUploadPreviewImg" alt="Preview foto kamera HP sebelum dikirim ke CV Vercel" hidden>
+                                    <div class="manual-preview-empty" id="manualUploadPreviewEmpty">
+                                        <b>Belum Ada Foto Dipilih</b>
+                                        <span>Klik "Kamera HP / Upload Foto" untuk mengambil foto daun selada (JPEG/PNG/WebP, maks 4,5 MB).</span>
+                                    </div>
+                                    <div class="manual-file-meta tabular-nums" id="manualUploadFileMeta" hidden></div>
+                                </div>
+                                <div class="manual-controls-box">
+                                    <div class="field">
+                                        <div class="t"><b>Token Capture Server</b><span>Wajib sesuai <code>CAPTURE_SHARED_TOKEN</code> di Vercel.</span></div>
+                                        <div class="ctl">
+                                            <input type="password" id="manualCaptureToken" placeholder="Masukkan CAPTURE_SHARED_TOKEN" autocomplete="off">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="t"><b>Hari Setelah Tanam (HST)</b><span>Rentang kampanye wajib 1–42 hari.</span></div>
+                                        <div class="ctl">
+                                            <input type="number" id="manualCaptureHst" min="1" max="42" value="1" class="tabular-nums">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <div class="t"><b>Jendela Jadwal Slot WIB</b><span>Validasi server: 07:00–16:50 WIB (interval 10 menit).</span></div>
+                                        <div class="ctl">
+                                            <span class="badge-tag blue tabular-nums" id="manualCaptureWindowState">Memeriksa jam WIB...</span>
+                                        </div>
+                                    </div>
+                                    <div class="u-flex-wrap-center u-gap-8 u-mt-6">
+                                        <button class="btn btn-secondary btn small" type="button" id="btnManualSelectFile">Pilih / Ambil Foto HP</button>
+                                        <button class="btn btn-primary btn small" type="button" id="btnManualUploadSubmit" disabled>Kirim &amp; Proses CV ke Vercel</button>
+                                    </div>
+                                    <div class="manual-upload-status" id="manualUploadStatus" role="status" aria-live="polite">
+                                        Siap menerima foto kamera HP. Gambar akan dinormalisasi ke JPEG, dihitung FNV-1a checksum, dan dikirim ke <code>POST /api/kelompok5/capture</code>.
+                                    </div>
+                                </div>
                             </div>
                         </article>
 
@@ -839,6 +888,7 @@
                                 <option value="invalid">Hanya Gagal/Reject</option>
                             </select>
                             <button type="button" class="btn btn-secondary btn small" id="btnGrowthExportCSV">Unduh CSV Pertumbuhan</button>
+                            <button type="button" class="btn btn-secondary btn small" id="btnGrowthMobileUpload">Upload Foto HP (CV Vercel)</button>
                             <button type="button" class="btn btn-primary btn small" id="btnGrowthManualCapture">Trigger Capture Slot</button>
                         </div>
                     </div>
