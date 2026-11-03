@@ -20,6 +20,7 @@ import sys
 import json
 import time
 import math
+import threading
 from datetime import datetime, timezone, timedelta
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -44,6 +45,7 @@ class LettuceCVPipeline:
         self.meta_file = meta_file
         self.calib_factor = calib_factor_mm_per_px # None if uncalibrated
         self.algo_version = "v1.2-exg-otsu"
+        self._meta_lock = threading.Lock()
 
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.meta_file) if os.path.dirname(self.meta_file) else ".", exist_ok=True)
@@ -279,16 +281,17 @@ class LettuceCVPipeline:
         return record
 
     def _append_metadata(self, record):
-        try:
-            records = []
-            if os.path.exists(self.meta_file):
-                with open(self.meta_file, "r") as f:
-                    records = json.load(f)
-            records.append(record)
-            with open(self.meta_file, "w") as f:
-                json.dump(records, f, indent=2)
-        except Exception as e:
-            print(f"[LettuceCVPipeline] Failed to append metadata: {e}", file=sys.stderr)
+        with self._meta_lock:
+            try:
+                records = []
+                if os.path.exists(self.meta_file):
+                    with open(self.meta_file, "r") as f:
+                        records = json.load(f)
+                records.append(record)
+                with open(self.meta_file, "w") as f:
+                    json.dump(records, f, indent=2)
+            except Exception as e:
+                print(f"[LettuceCVPipeline] Failed to append metadata: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
     print(f"[LettuceCVPipeline] Initializing Computer Vision Engine (Algo: v1.2-exg-otsu)...")

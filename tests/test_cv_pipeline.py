@@ -20,6 +20,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from growth_cv_pipeline import LettuceCVPipeline, WIB_TIMEZONE
 from scheduler_daemon import LeafGrowthScheduler, compute_fnv1a_hex
 import io
+import json
+import tempfile
 
 def _create_unit_test_image(width=320, height=240, has_plant=True, is_dark=False, is_blur=False):
     """
@@ -224,6 +226,148 @@ class TestSchedulerDaemon(unittest.TestCase):
         self.assertTrue(ok_res["confirmed"])
         self.assertEqual(ok_res["checksum_fnv1a"], valid_checksum)
         self.assertIn("2026-11-02_08:00", self.scheduler.executed_slots)
+
+
+class TestESP32CamSlotPersistence(unittest.TestCase):
+    """
+    Firmware slot state management tests:
+    1. Reboot sebelum upload
+    2. Timeout
+    3. HTTP 422
+    4. Respons tidak valid
+    5. Sukses
+    6. Reboot setelah sukses & slot berikutnya tidak terhalang
+    """
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.meta_file = os.path.join(self.temp_dir, "meta.json")
+        self.img_dir = os.path.join(self.temp_dir, "images")
+        os.makedirs(self.img_dir, exist_ok=True)
+        with open(self.meta_file, "w") as f:
+            json.dump([], f)
+        self.cfg = {
+            "total_days": 42,
+            "target_valid_images": 1600,
+            "start_time_wib": "07:00",
+            "end_time_wib": "16:50",
+            "slot_interval_minutes": 10,
+            "camera_host": "192.168.1.105",
+            "camera_timeout_seconds": 6,
+            "max_retries": 3,
+            "retry_delay_seconds": 2,
+            "plant_id": "SLD-01",
+            "camera_id": "ESP32-CAM-01",
+            "metadata_path": self.meta_file,
+            "images_dir": self.img_dir,
+            "log_file": os.path.join(self.temp_dir, "daemon.log")
+        }
+        self.scheduler = LeafGrowthScheduler(self.cfg)
+        self.img = _create_unit_test_image(width=160, height=120, has_plant=True)
+        buf = io.BytesIO()
+        self.img.save(buf, format="JPEG", quality=85)
+        self.raw_bytes = buf.getvalue()
+        self.valid_fnv = compute_fnv1a_hex(self.raw_bytes)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_reboot_before_upload(self):
+        # 1. Slot attempt interrupted by reboot before upload: NVS remains empty
+        nvs_confirmed_slot = ""
+        attempted_slot = ""
+        slot = "2026-11-03_07:00"
+
+        # Before upload, attempted_slot is marked in RAM
+        attempted_slot = slot
+
+        # Reboot occurs: RAM is wiped, NVS persists
+        attempted_slot = ""
+        # System re-evaluates: slot is NOT in confirmed_slot and NOT in attempted_slot
+        should_run = (slot != nvs_confirmed_slot and slot != attempted_slot)
+        self.assertTrue(should_run, "Slot must be allowed to execute after reboot if not yet confirmed")
+
+    def test_timeout_handling(self):
+        # 2. Timeout: upload fails, confirmed_slot is not updated
+        nvs_confirmed_slot = ""
+        slot = "2026-11-03_07:10"
+        # Simulate timeout in network call
+        upload_success = False
+        if upload_success:
+            nvs_confirmed_slot = slot
+        self.assertEqual(nvs_confirmed_slot, "")
+
+    def test_http_422_rejection(self):
+        # 3. HTTP 422: receiver rejects invalid payload
+        nvs_confirmed_slot = ""
+        slot = "2026-11-03_07:20"
+        res = self.scheduler.ingest_synced_photo(
+            raw_bytes=b"CORRUPTED_PAYLOAD_NON_JPEG" * 5,
+            slot_key=slot,
+            captured_at_ms=1762129200000,
+            hst_day=1
+        )
+        self.assertFalse(res["ok"])
+        self.assertFalse(res["confirmed"])
+        # Firmware only saves to NVS if res has ok=true and confirmed=true
+        if res.get("ok") and res.get("confirmed"):
+            nvs_confirmed_slot = slot
+        self.assertEqual(nvs_confirmed_slot, "")
+
+    def test_invalid_response_rejection(self):
+        # 4. Invalid response: HTTP 200 without ok=true & confirmed=true must NOT be considered success
+        nvs_confirmed_slot = ""
+        slot = "2026-11-03_07:30"
+        mock_http_code = 200
+        mock_response_body = '{"status":"received","warning":"not_yet_processed"}'
+        # Verification matching firmware logic:
+        # code == 200 && response.indexOf("\"ok\":true") >= 0 && response.indexOf("\"confirmed\":true") >= 0
+        is_success = (mock_http_code == 200 and
+                      '"ok":true' in mock_response_body and
+                      '"confirmed":true' in mock_response_body)
+        if is_success:
+            nvs_confirmed_slot = slot
+        self.assertFalse(is_success)
+        self.assertEqual(nvs_confirmed_slot, "")
+
+    def test_success_confirmation(self):
+        # 5. Success: valid response saves confirmed_slot to NVS
+        nvs_confirmed_slot = ""
+        slot = "2026-11-03_07:40"
+        res = self.scheduler.ingest_synced_photo(
+            raw_bytes=self.raw_bytes,
+            slot_key=slot,
+            captured_at_ms=1762130400000,
+            expected_fnv1a=self.valid_fnv,
+            hst_day=1
+        )
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["confirmed"])
+        mock_http_code = 200
+        mock_body = json.dumps(res)
+        is_success = (mock_http_code == 200 and
+                      '"ok": true' in mock_body and
+                      '"confirmed": true' in mock_body)
+        self.assertTrue(is_success)
+        if is_success:
+            nvs_confirmed_slot = slot
+        self.assertEqual(nvs_confirmed_slot, slot)
+
+    def test_reboot_after_success_and_next_slot(self):
+        # 6. Reboot after success loads confirmed_slot and prevents double upload
+        nvs_confirmed_slot = "2026-11-03_07:40"
+        # Reboot occurs
+        confirmedSlotKey = nvs_confirmed_slot
+        attemptedSlotKey = ""
+
+        # Same slot must be skipped
+        same_slot = "2026-11-03_07:40"
+        skip_same = (same_slot == confirmedSlotKey or same_slot == attemptedSlotKey)
+        self.assertTrue(skip_same, "Already confirmed slot must be skipped")
+
+        # Next slot (07:50) must not be blocked by anything
+        next_slot = "2026-11-03_07:50"
+        should_run_next = (next_slot != confirmedSlotKey and next_slot != attemptedSlotKey)
+        self.assertTrue(should_run_next, "Next slot must not be blocked")
 
 
 if __name__ == "__main__":

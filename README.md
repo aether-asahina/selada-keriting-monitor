@@ -1,8 +1,25 @@
 # Selada Keriting Smart Monitor & Irigasi Histeresis · Kelompok 5 (Lactuca sativa L.)
 
-Sistem telemetri IoT mikroklimat presisi **Kelompok 5**, otomasi irigasi histeresis, Decision Support System (DSS) agronomi, dan pemantauan otomatis pertumbuhan daun selada keriting (*Lactuca sativa L. var. crispa*) berbasis Computer Vision selama siklus 42 hari dengan scheduler mandiri microSD pada ESP32-CAM. Dibangun dengan standar antarmuka profesional (Dark Palette `#090d16` & `#111827`, border `1px solid rgba(255,255,255,0.08)`, aksen `#3b82f6`, `#10b981`, `#f59e0b`, `#ef4444`, tipografi Inter & JetBrains Mono `tabular-nums`, ikon SVG Lucide 1.75px, zero AI emojis) dengan arsitektur responsif bebas luapan kontainer pada seluruh rentang viewport (320px s.d 1920px).
+Sistem telemetri IoT mikroklimat presisi **Kelompok 5**, otomasi irigasi histeresis, Decision Support System (DSS) agronomi, dan pemantauan otomatis pertumbuhan daun selada keriting (*Lactuca sativa L. var. crispa*) berbasis Computer Vision selama siklus 42 hari dengan scheduler mandiri berbasis Wi-Fi pada ESP32-CAM. Dibangun dengan standar antarmuka profesional (Dark Palette `#090d16` & `#111827`, border `1px solid rgba(255,255,255,0.08)`, aksen `#3b82f6`, `#10b981`, `#f59e0b`, `#ef4444`, tipografi Inter & JetBrains Mono `tabular-nums`, ikon SVG Lucide 1.75px, zero AI emojis) dengan arsitektur responsif bebas luapan kontainer pada seluruh rentang viewport (320px s.d 1920px).
 
 ---
+
+
+### Menjalankan Receiver Foto Wi-Fi (tanpa microSD)
+
+1. Pastikan komputer server dan ESP32-CAM berada pada jaringan Wi-Fi/LAN yang sama.
+2. Instal dependensi Python proyek (terutama Pillow dan OpenCV yang digunakan pipeline CV).
+3. Jalankan receiver dari root repository:
+
+   ```bash
+   python scripts/scheduler_daemon.py --receiver --host 0.0.0.0 --port 8081
+   ```
+
+4. Pada firmware `esp32cam_kelompok5_autonomous.ino`, sesuaikan `WIFI_SSID`, `WIFI_PASS`, dan `RECEIVER_URL` dengan jaringan serta alamat IPv4 komputer server. `RECEIVER_URL` harus berakhir dengan `/api/kelompok5/capture`.
+5. Upload firmware ke AI-Thinker ESP32-CAM. Cek `http://IP_KAMERA/status` dan stream `http://IP_KAMERA:81/stream`.
+
+ESP32-CAM menjalankan satu-satunya scheduler capture: 07:00 sampai 16:50 WIB, interval 10 menit. Python hanya menerima JPEG, memvalidasi ukuran/checksum/slot, menyimpan file dan metadata, lalu menjalankan CV. Browser hanya menampilkan status dan data, bukan pemicu jadwal. Karena tidak ada microSD, foto pada slot yang gagal dikirim tidak memiliki antrean lokal dan perlu ditangani sebagai slot gagal.
+
 
 ## 1. Arsitektur Sistem & Alur Data Terintegrasi
 
@@ -66,9 +83,9 @@ flowchart TD
 Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian modern premium:
 - **Palet Warna**: Canvas `#090d16`, panel/surface `#111827`, border tipis `1px solid rgba(255,255,255,0.08)`, aksen biru Linear `#3b82f6`, indikator hijau `#10b981` (kondisi optimal), kuning `#f59e0b` (peringatan), merah `#ef4444` (kritis).
 - **Sidebar Navigasi Proporsional (11 Modul Fungsional)**:
-  1. **Dashboard (`#ringkasan`)**: Pusat monitoring utama dengan ringkasan status perangkat/kamera/microSD/sinkronisasi/HST, 4 KPI kartu fisik utama, grafik interaktif lebar (Suhu Udara, Kelembapan Udara, Kelembapan Tanah, Riwayat Status Pompa/Relay, serta Progres Pertumbuhan Tanaman Citra Aktual), Live Camera IP lokal, Galeri Capture Aktual, Log Telemetri, dan Evaluasi Pakar.
+  1. **Dashboard (`#ringkasan`)**: Pusat monitoring utama dengan ringkasan status perangkat/kamera/koneksi kamera/unggah Wi-Fi/HST, 4 KPI kartu fisik utama, grafik interaktif lebar (Suhu Udara, Kelembapan Udara, Kelembapan Tanah, Riwayat Status Pompa/Relay, serta Progres Pertumbuhan Tanaman Citra Aktual), Live Camera IP lokal, Galeri Capture Aktual, Log Telemetri, dan Evaluasi Pakar.
   2. **Sensor (`#sensor`)**: Detail telemetri sensor tanah, suhu, udara, zona histeresis, dan korelasi scatter plot dalam grid 2 kolom seimbang.
-  3. **Kamera (`#kamera`)**: Live streaming ESP32-CAM (`http://<IP>:81/stream`), status microSD & antrean sinkronisasi FNV-1a, snapshot manual, dan galeri sesi.
+  3. **Kamera (`#kamera`)**: Live streaming ESP32-CAM (`http://<IP>:81/stream`), status kamera & upload Wi-Fi tervalidasi FNV-1a, snapshot manual, dan galeri sesi.
   4. **Pertumbuhan Daun (`#pertumbuhan-daun`)**: Dasbor kampanye 42 hari, progres target 1.600 gambar, countdown 10 menit, 4 grafik trajektori kanopi, galeri filterable, dan modal inspeksi segmentasi side-by-side.
   5. **Riwayat (`#riwayat`)**: Log telemetri per pembacaan / per menit dengan paginasi, pengurutan kolom, dan unduh CSV aman CWE-1236.
   6. **Analisis Tanaman (`#analisis-tanaman`)**: DSS fisiologi tanaman dengan dekomposisi Tetens VPD dan model termal GDD ($T_{\text{base}} = 4.0^\circ\text{C}$).
@@ -79,7 +96,7 @@ Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian mod
   11. **Panduan (`#panduan`)**: Diagram alur kerja IoT, langkah instalasi step-by-step, troubleshooting, skema JSON RTDB Kelompok 5, dan pinout lengkap.
 - **Header Global Ringkas**: Menampilkan judul sistem, rentang tanggal / jam aktual WIB, status koneksi Firebase Kelompok 5 & ESP32-CAM, dan badge jumlah peringatan aktif.
 - **Top Area: Ringkasan Perangkat & 4 KPI Kartu Fisik**:
-  - *Status Perangkat & Kampanye*: Koneksi ESP32 (`/kelompok5`), Live Camera (`/stream`), Penyimpanan microSD (`SD_MMC`), Antrean Sinkronisasi (`FNV-1a`), dan Target Foto Valid (`0 / 1.600`).
+  - *Status Perangkat & Kampanye*: Koneksi ESP32 (`/kelompok5`), Live Camera (`/stream`), Koneksi Kamera Wi-Fi, Upload JPEG (`FNV-1a`), dan Target Foto Valid (`0 / 1.600`).
   - *Sensor Fisik Terpasang & Aktuator*: Kelembapan Tanah (HW-390, target 65–78%), Suhu Udara (DHT22, target 15–24°C), Kelembapan Udara (DHT22, target 60–80%), serta Status Pompa & Relay Irigasi (`ON / OFF`).
 - **Main Area: 3 Panel Komposisi Utama**:
   1. *Live Camera View*: Preview kanopi ESP32-CAM dengan badge status LIVE/OFFLINE, resolusi SVGA 800×600, timestamp WIB, dan tombol reconnect.
@@ -165,25 +182,25 @@ selada-workspace/
 │   ├── esp32_kelompok5_sensor/
 │   │   └── esp32_kelompok5_sensor.ino          # Firmware ESP32 Kelompok 5 (Non-blocking millis(), histeresis 65-78%, RTDB /kelompok5)
 │   └── esp32cam_kelompok5_autonomous/
-│       └── esp32cam_kelompok5_autonomous.ino   # Firmware ESP32-CAM Kelompok 5 (/stream :81, scheduler microSD mandiri, 1 foto/siklus sync FNV-1a)
+│       └── esp32cam_kelompok5_autonomous.ino   # Firmware ESP32-CAM Kelompok 5 (/stream :81, scheduler Wi-Fi mandiri, upload JPEG langsung ke server)
 ├── js/
 │   ├── firebase-config.js   # SecurityUtils (DOM XSS, CWE-1236), ConfigStore (/kelompok5), FirebaseEdgeClient
 │   ├── dataset.js           # DatasetStore, statistik telemetri, tabel riwayat, paginasi, export CSV
-│   ├── leaf-growth.js       # LeafGrowthManager, polling status microSD & sync queue (/status), galeri, modal inspeksi
+│   ├── leaf-growth.js       # LeafGrowthManager, polling status kamera dan koneksi Wi-Fi (/status), galeri, modal inspeksi
 │   ├── ai-assistant.js      # DSS Agronomi Selada, Tetens VPD, unit termal GDD, chat thread
 │   └── dashboard.js         # Pengendali utama, router 12 halaman, live camera /stream, SCADA histeresis, ResizeObserver chart
 ├── scripts/
 │   ├── growth_cv_pipeline.py      # Engine computer vision (ExG Otsu, morfologi, kontur, pengukuran Kelompok 5)
-│   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit & endpoint ingest sinkronisasi microSD (FNV-1a verification)
+│   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit & HTTP receiver JPEG kamera melalui Wi-Fi (FNV-1a verification)
 ├── data/
 │   ├── growth_images/             # Repositori berkas citra aktual (orig.jpg, mask.png, overlay.jpg)
 │   ├── growth_metadata.json       # Metadata terstruktur hasil pengukuran kanopi aktual
 │   └── scheduler_daemon.log       # Log eksekusi scheduler independen
 ├── tests/
 │   ├── run-all-tests.js     # Test runner JavaScript komprehensif (Unit, Integration, Firmware & Hardware Audit)
-│   └── test_cv_pipeline.py  # Test suite Python untuk engine CV, scheduler, dan konfirmasi FNV-1a microSD
+│   └── test_cv_pipeline.py  # Test suite Python untuk engine CV, receiver Wi-Fi dan konfirmasi FNV-1a
 ├── index.html               # Markup 12 modul UI Kelompok 5, KPI grid, live camera /stream, modal dialog
-└── README.md                # Dokumentasi arsitektur Kelompok 5, firmware microSD, wiring pinout, dan pengujian
+└── README.md                # Dokumentasi arsitektur Kelompok 5, firmware Wi-Fi, wiring pinout, dan pengujian
 ```
 
 ---
@@ -196,19 +213,13 @@ selada-workspace/
 - **Histeresis Pompa & Safety Cutoff**: Pompa GPIO 26 (Aktif-LOW) menyala saat kelembapan tanah $< 65\%$, mati pada $> 78\%$, dilengkapi jeda proteksi sakelar 5 detik dan pemutus darurat (*safety cutoff*) 120 detik.
 - **Endpoint Firebase RTDB**: Mengirim payload JSON bertanda `"kelompok": "Kelompok 5"` ke `/kelompok5.json` serta kompatibel dengan struktur `/history` dan `/current`.
 
-### B. Firmware ESP32-CAM Autonomous microSD Spooler (`firmware/esp32cam_kelompok5_autonomous/`)
-- **Live Stream Lokal (`/stream`)**: Menyediakan stream MJPEG real-time pada `http://<IP>:81/stream` serta snapshot `http://<IP>/capture` dan telemetri penyimpanan `http://<IP>/status`.
-- **Scheduler Mandiri Offline-First (10 Menit · 07:00–16:50 WIB · 42 Hari)**:
-  - Mengambil foto secara mandiri dan menyimpannya langsung ke kartu **microSD** (`/kelompok5/queue/K5_HSTxx_YYYYMMDD_HHMMSS_ms.jpg` beserta sidecar `.meta`) **tanpa bergantung pada koneksi Wi-Fi**.
-  - Menyimpan titik waktu terakhir di `/kelompok5/state.json` pada microSD untuk **pemulihan pasca-restart (reboot recovery)** bahkan sebelum NTP tersinkronisasi.
-  - Melakukan pemeriksaan ruang bebas minimum (`MIN_SD_FREE_BYTES = 4 MB`) untuk mencegah kerusakan sistem berkas saat microSD penuh, serta melakukan *soft-reset* sensor OV2640 bila terjadi kegagalan frame.
-- **Optimasi RAM Ketat (1 Foto per Siklus)**:
-  - Konfigurasi `fb_count = 1` pada PSRAM; frame buffer kamera segera dibebaskan (`esp_camera_fb_return(fb)`) tepat setelah penulisan berkas ke microSD selesai.
-  - Saat Wi-Fi kembali tersedia, proses *Store-and-Forward* (`syncOneQueuedPhoto()`) hanya membaca dan mengalirkan **maksimal 1 foto per siklus** menggunakan buffer stack 2 KB (`uint8_t chunk[2048]`) tanpa alokasi `String` heap besar.
-- **Validasi Checksum FNV-1a & Konfirmasi Server Sebelum Hapus Lokal**:
-  - Setiap foto yang dikirim menyertakan header `X-Checksum-FNV1A`, `X-Slot-Key`, dan `X-Captured-At`.
-  - Server (`LeafGrowthScheduler.ingest_synced_photo` pada `scripts/scheduler_daemon.py`) memverifikasi ukuran byte, kecocokan hash FNV-1a 32-bit, keutuhan dekode JPEG, dan menjalankan segmentasi CV sebelum mengembalikan JSON `{"ok": true, "confirmed": true}`.
-  - ESP32-CAM **hanya menghapus** berkas `.jpg` dan `.meta` dari antrean microSD apabila menerima HTTP 200 beserta token `"confirmed":true` dan `"ok":true`. Jika jaringan terputus di tengah pengiriman, berkas lokal tetap aman di microSD untuk siklus berikutnya.
+### B. Firmware ESP32-CAM Autonomous Wi-Fi Capture (`firmware/esp32cam_kelompok5_autonomous/`)
+- **Live Stream Lokal (`/stream`)**: MJPEG tersedia di `http://<IP>:81/stream`, snapshot manual di `http://<IP>/capture`, dan status kamera/Wi-Fi di `http://<IP>/status`.
+- **Scheduler Tunggal (10 Menit · 07:00–16:50 WIB · 42 Hari)**: ESP32-CAM mengambil foto pada slot 10-menit. WIB disediakan oleh konfigurasi NTP UTC+7. Awal kampanye dan slot terakhir disimpan di NVS internal ESP32 agar tidak reset saat reboot.
+- **Upload Wi-Fi Langsung**: JPEG dikirim melalui HTTP POST ke receiver Python dengan metadata slot, timestamp, HST, ukuran file, dan checksum FNV-1a. Tidak ada microSD, spooler, atau antrean sinkronisasi.
+- **Optimasi RAM**: Satu frame buffer digunakan; buffer dikembalikan segera setelah request upload selesai. Stream tetap berjalan pada port 81.
+- **Server Receiver dan CV**: `scripts/scheduler_daemon.py --receiver --host 0.0.0.0 --port 8081` menerima JPEG, memvalidasi header/ukuran/checksum/JPEG, mencegah duplikasi slot, menyimpan hasil, lalu menjalankan pipeline CV.
+- **Batasan konektivitas**: Karena tidak ada penyimpanan lokal, kamera harus terhubung ke Wi-Fi dan server pada saat jadwal. Slot yang gagal upload ditandai gagal dan tidak memiliki retry/offline queue.
 
 ### Skema Pinout ESP32 Microcontroller
 | Komponen | Pin Modul | Pin GPIO ESP32 | Keterangan |

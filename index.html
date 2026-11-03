@@ -112,7 +112,7 @@
                             </div>
                             <div class="banner-title-block">
                                 <h2>Status Sistem &amp; Kampanye 42 Hari <span class="badge-tag emerald u-fs-10">Kelompok 5</span></h2>
-                                <p>100% Data Fisik Aktual · Jadwal foto 10 menit (07:00–16:50 WIB) mandiri ke microSD &amp; sinkronisasi tervalidasi FNV-1a</p>
+                                <p>100% Data Fisik Aktual · Jadwal foto 10 menit (07:00–16:50 WIB) oleh ESP32-CAM melalui Wi-Fi</p>
                             </div>
                         </div>
                         <div class="age-stat-group">
@@ -133,9 +133,9 @@
                             <span class="strip-sub" id="badgeCamStatus">Port 81 MJPEG · OV2640</span>
                         </div>
                         <div class="status-strip-item">
-                            <span class="strip-label">Penyimpanan microSD</span>
+                            <span class="strip-label">Status Kamera</span>
                             <strong class="strip-val tabular-nums" id="dashSdStorageVal">NOT AVAILABLE</strong>
-                            <span class="strip-sub" id="dashSdStorageSub">Spooler lokal /kelompok5/queue/</span>
+                            <span class="strip-sub" id="dashSdStorageSub">Koneksi kamera Wi-Fi</span>
                         </div>
                         <div class="status-strip-item">
                             <span class="strip-label">Sinkronisasi Antrean Foto</span>
@@ -375,7 +375,7 @@
                                 <div class="visual-empty-placeholder visual-empty-cam" id="dashCamEmpty">
                                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="u-opacity-50"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                                     <span class="empty-title">Stream Kamera Lokal Belum Terhubung</span>
-                                    <span class="empty-sub">Masukkan IP lokal ESP32-CAM di atas untuk membuka stream MJPEG <code>/stream</code>. Saat offline, kamera tetap memotret tiap 10 menit ke microSD.</span>
+                                    <span class="empty-sub">Masukkan IP lokal ESP32-CAM untuk membuka stream MJPEG <code>/stream</code>. Kamera mengirim foto langsung ke server melalui Wi-Fi.</span>
                                 </div>
                                 <img id="dashCamImg" class="cam-preview-img" src="" alt="Feed Kamera Tanaman" style="display: none;">
                                 <div class="cam-controls-bar">
@@ -677,18 +677,18 @@
 
                         <article class="panel">
                             <div class="panel-head">
-                                <h2>Scheduler Mandiri microSD &amp; Sinkronisasi</h2>
-                                <span class="badge-tag emerald">Offline-First</span>
+                                <h2>Scheduler ESP32-CAM &amp; Upload Wi-Fi</h2>
+                                <span class="badge-tag emerald">Wi-Fi Direct</span>
                             </div>
                             <div class="field">
-                                <div class="t"><b>Status microSD</b><span>Spooler <code>/kelompok5/queue/</code></span></div>
+                                <div class="t"><b>Status Kamera</b><span>ESP32-CAM melalui Wi-Fi</span></div>
                                 <div class="ctl"><span class="badge-tag tabular-nums" id="camSdStorageStatus">NOT AVAILABLE</span></div>
                             </div>
                             <div class="field">
-                                <div class="t"><b>Antrean Sinkronisasi</b><span>1 foto/siklus + konfirmasi FNV-1a</span></div>
+                                <div class="t"><b>Status Upload</b><span>JPEG langsung ke server + validasi checksum</span></div>
                                 <div class="ctl"><span class="badge-tag blue tabular-nums" id="camSyncQueueStatus">Siaga Mandiri</span></div>
                             </div>
-                            <p class="hint u-mt-6">ESP32-CAM memotret otomatis setiap 10 menit (07:00–16:50 WIB) selama 42 hari langsung ke microSD tanpa bergantung Wi-Fi. File lokal hanya dihapus setelah server mengonfirmasi penerimaan checksum FNV-1a.</p>
+                            <p class="hint u-mt-6">ESP32-CAM menjadi satu-satunya scheduler dan mengirim JPEG langsung ke server melalui Wi-Fi setiap 10 menit (07:00–16:50 WIB), selama 42 hari. Koneksi Wi-Fi dan server wajib aktif saat jadwal capture.</p>
                         </article>
 
                         <article class="panel">
@@ -748,15 +748,15 @@
                     </div>
                 </div>
 
-                <!-- Visual Campaign Progress & Autonomous microSD Sync Status -->
+                <!-- Visual Campaign Progress & ESP32-CAM Wi-Fi Status -->
                 <article class="panel growth-campaign-banner">
                     <div class="panel-head">
                         <div>
-                            <h2>Progres Pengambilan Foto 42 Hari &amp; Sinkronisasi microSD (Kelompok 5)</h2>
-                            <p class="hint">Jadwal mandiri ESP32-CAM setiap 10 menit (07:00–16:50 WIB) disimpan ke microSD dan disinkronkan 1 foto/siklus dengan konfirmasi server.</p>
+                            <h2>Progres Pengambilan Foto 42 Hari (Kelompok 5)</h2>
+                            <p class="hint">Jadwal dijalankan oleh ESP32-CAM setiap 10 menit (07:00–16:50 WIB); server menerima dan memproses JPEG melalui Wi-Fi.</p>
                         </div>
                         <div class="toolbar">
-                            <span class="badge-tag tabular-nums" id="growthSdStorageStatus">microSD: NOT AVAILABLE</span>
+                            <span class="badge-tag tabular-nums" id="growthSdStorageStatus">KAMERA: OFFLINE</span>
                             <span class="badge-tag blue tabular-nums" id="growthSyncQueueStatus">Sync: Siaga Mandiri</span>
                         </div>
                     </div>

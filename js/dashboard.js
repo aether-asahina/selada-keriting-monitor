@@ -686,7 +686,7 @@
                 .catch(() => this.toast('Gagal menyalin data.', 'rose'));
         }
 
-        // ================= CAMERA ENGINE (SSRF Protected · /stream & microSD Sync) =================
+        // ================= CAMERA ENGINE (SSRF Protected · /stream & Wi-Fi Direct Capture) =================
         bindCameraEngine() {
             const camimg = $('#camimg');
             const camstate = $('#camstate');
@@ -774,8 +774,8 @@
                     window.GrowthStore.renderStorageAndSyncStatus();
                 }
                 camMsg('Feed /stream tidak terjangkau', location.protocol === 'https:'
-                    ? 'Browser memblokir stream HTTP lokal pada halaman HTTPS. Buka dashboard via HTTP lokal. Jadwal foto 10 menit tetap tersimpan otomatis ke microSD ESP32-CAM.'
-                    : 'Kamera ESP32-CAM offline di jaringan lokal. Pengambilan foto otomatis setiap 10 menit (07:00–16:50 WIB) tetap berjalan mandiri ke microSD.');
+                    ? 'Browser memblokir stream HTTP lokal pada halaman HTTPS. Buka dashboard via HTTP lokal. Kamera mengirim foto langsung ke receiver via Wi-Fi.'
+                    : 'Kamera ESP32-CAM offline di jaringan lokal. Kamera memotret dan mengirim JPEG langsung ke server saat online.');
             };
 
             if (camimg) {

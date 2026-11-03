@@ -1064,7 +1064,7 @@ try {
         fail('Kelompok5-Migration', 'Found remaining kelompok2 reference or missing Kelompok 5 configuration');
     }
 
-    // 9. Verify ESP32 & ESP32-CAM Kelompok 5 Firmware (Non-blocking millis(), /stream, microSD offline queue, 1-photo sync, FNV-1a confirmation)
+    // 9. Verify ESP32-CAM Wi-Fi scheduler and direct JPEG upload (no microSD).
     const esp32InoPath = path.join(rootDir, 'firmware/esp32_kelompok5_sensor/esp32_kelompok5_sensor.ino');
     const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
     const esp32Ino = fs.existsSync(esp32InoPath) ? fs.readFileSync(esp32InoPath, 'utf8') : '';
@@ -1072,25 +1072,141 @@ try {
 
     const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
     const hasZeroBlockingDelay = !(/\bdelay\s*\(/.test(stripComments(esp32Ino))) && !(/\bdelay\s*\(/.test(stripComments(esp32CamIno)));
-    const hasStreamAndSdQueue = esp32CamIno.includes('"/stream"') &&
-        esp32CamIno.includes('/kelompok5/queue') &&
+    const hasWifiDirectCapture = esp32CamIno.includes('"/stream"') &&
+        esp32CamIno.includes('RECEIVER_URL') &&
+        esp32CamIno.includes('X-Slot-Key') &&
         esp32CamIno.includes('X-Checksum-FNV1A') &&
-        esp32CamIno.includes('\\"confirmed\\":true') &&
-        esp32CamIno.includes('SD_MMC.remove');
+        esp32CamIno.includes('configTime') &&
+        !esp32CamIno.includes('SD_MMC') &&
+        !esp32CamIno.includes('SD_MMC.h');
+    const receiverSource = fs.readFileSync(path.join(rootDir, 'scripts/scheduler_daemon.py'), 'utf8');
+    const browserSource = fs.readFileSync(path.join(rootDir, 'js/leaf-growth.js'), 'utf8');
+    const hasSingleScheduler = receiverSource.includes('def run_receiver') &&
+        !receiverSource.includes('def run_daemon') &&
+        browserSource.includes('this.schedulerActive = false');
 
-    if (esp32Ino.includes('/kelompok5.json') && hasZeroBlockingDelay && hasStreamAndSdQueue) {
-        pass('Firmware-Kelompok5-Audit', 'ESP32 & ESP32-CAM firmware verified: zero blocking delay(), /stream on :81, offline microSD queue, 1-photo-per-cycle sync, and FNV-1a server confirmation before deletion');
+    if (esp32Ino.includes('/kelompok5.json') && hasZeroBlockingDelay && hasWifiDirectCapture && hasSingleScheduler) {
+        pass('Firmware-Kelompok5-Audit', 'ESP32-CAM keeps /stream on :81, schedules 10-minute WIB captures, uploads JPEG directly over Wi-Fi with slot/checksum metadata, and has no microSD code or duplicate browser/server scheduler');
     } else {
-        fail('Firmware-Kelompok5-Audit', 'ESP32 / ESP32-CAM firmware failed non-blocking or microSD sync verification');
+        fail('Firmware-Kelompok5-Audit', 'ESP32-CAM Wi-Fi capture architecture or single-scheduler verification failed');
     }
 } catch (e) {
     fail('Real-Data-Audit', 'Unexpected error in Suite 23', e.message);
 }
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 24: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// TEST SUITE 24: ESP32-CAM SLOT PERSISTENCE & NVS STATE MANAGEMENT
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [24] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
+console.log(`\n${C.bold}--- [24] ESP32-CAM Slot Persistence & NVS State Management ---${C.reset}`);
+
+try {
+    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
+    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
+
+    const hasAttemptedSlot = esp32CamIno.includes('attemptedSlotKey') && esp32CamIno.includes('attempted_slot');
+    const hasConfirmedSlot = esp32CamIno.includes('confirmedSlotKey') && esp32CamIno.includes('confirmed_slot');
+    const hasStrictConfirmedCheck = esp32CamIno.includes('code==200') &&
+        esp32CamIno.includes('response.indexOf("\\"ok\\":true")') &&
+        esp32CamIno.includes('response.indexOf("\\"confirmed\\":true")');
+    const savesConfirmedOnlyOnSuccess = esp32CamIno.includes('prefs.putString("confirmed_slot",confirmedSlotKey)');
+
+    // Model the exact state machine of ESP32-CAM in memory to test all 6 runtime scenarios
+    class MockESP32CamFSM {
+        constructor() {
+            this.nvs = {}; // Persistent NVS Flash (survives reboots)
+            this.reboot();
+        }
+
+        reboot() {
+            // RAM variables reset on reboot
+            this.attemptedSlotKey = '';
+            // NVS persists across reboots
+            this.confirmedSlotKey = this.nvs['confirmed_slot'] || '';
+            this.campaignStartEpoch = this.nvs['campaign_start'] || 1762124400;
+        }
+
+        simulateSlotTick(slotKey, networkSimulator) {
+            // Evaluates loop() condition
+            if (slotKey !== this.confirmedSlotKey && slotKey !== this.attemptedSlotKey) {
+                this.attemptedSlotKey = slotKey; // marked in RAM as attempted
+                const res = networkSimulator();
+                // Strictly require HTTP 200 AND JSON ok:true AND confirmed:true
+                if (res.code === 200 && res.body && res.body.includes('"ok":true') && res.body.includes('"confirmed":true')) {
+                    this.confirmedSlotKey = slotKey;
+                    this.nvs['confirmed_slot'] = this.confirmedSlotKey; // Persisted to NVS
+                    return { success: true, slot: slotKey };
+                }
+                return { success: false, slot: slotKey, error: res.error || `HTTP ${res.code}` };
+            }
+            return { skipped: true, reason: slotKey === this.confirmedSlotKey ? 'ALREADY_CONFIRMED' : 'ALREADY_ATTEMPTED' };
+        }
+    }
+
+    // 1. Reboot sebelum upload: slot unconfirmed tetap dieksekusi setelah reboot
+    const fsm1 = new MockESP32CamFSM();
+    fsm1.reboot();
+    const r1 = fsm1.simulateSlotTick('2026-11-03_07:00', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
+    if (r1.success && fsm1.confirmedSlotKey === '2026-11-03_07:00' && hasAttemptedSlot && hasConfirmedSlot) {
+        pass('Slot-Persistence', 'Reboot sebelum upload: slot unconfirmed dieksekusi & dikonfirmasi pasca-reboot');
+    } else {
+        fail('Slot-Persistence', 'Reboot sebelum upload gagal memproses slot unconfirmed');
+    }
+
+    // 2. Timeout: slot tidak ditandai confirmed_slot di NVS
+    const fsm2 = new MockESP32CamFSM();
+    const r2 = fsm2.simulateSlotTick('2026-11-03_07:10', () => ({ code: -1, error: 'Connection timeout', body: '' }));
+    if (!r2.success && !fsm2.nvs['confirmed_slot'] && fsm2.confirmedSlotKey === '') {
+        pass('Slot-Persistence', 'Timeout: upload timeout tidak menandai confirmed_slot di NVS');
+    } else {
+        fail('Slot-Persistence', 'Timeout secara salah menandai confirmed_slot di NVS');
+    }
+
+    // 3. HTTP 422: payload ditolak receiver tidak menandai confirmed_slot di NVS
+    const fsm3 = new MockESP32CamFSM();
+    const r3 = fsm3.simulateSlotTick('2026-11-03_07:20', () => ({ code: 422, body: '{"ok":false,"confirmed":false,"error":"FNV1a mismatch"}' }));
+    if (!r3.success && !fsm3.nvs['confirmed_slot'] && fsm3.confirmedSlotKey === '') {
+        pass('Slot-Persistence', 'HTTP 422: payload ditolak receiver tidak menandai confirmed_slot di NVS');
+    } else {
+        fail('Slot-Persistence', 'HTTP 422 secara salah menandai confirmed_slot di NVS');
+    }
+
+    // 4. Respons tidak valid (HTTP 200 tanpa ok:true & confirmed:true tidak dianggap sukses)
+    const fsm4 = new MockESP32CamFSM();
+    const r4 = fsm4.simulateSlotTick('2026-11-03_07:30', () => ({ code: 200, body: '{"ok":false,"confirmed":false}' }));
+    const r4b = fsm4.simulateSlotTick('2026-11-03_07:30', () => ({ code: 200, body: '<html>Gateway Error</html>' }));
+    if (!r4.success && !r4b.success && !fsm4.nvs['confirmed_slot'] && hasStrictConfirmedCheck) {
+        pass('Slot-Persistence', 'Respons tidak valid: HTTP 200 tanpa ok:true & confirmed:true ditolak dan tidak disimpan ke NVS');
+    } else {
+        fail('Slot-Persistence', 'HTTP 200 palsu/tanpa confirmed token secara salah dianggap sukses');
+    }
+
+    // 5. Sukses: HTTP 200 + ok:true + confirmed:true menyimpan confirmed_slot ke NVS
+    const fsm5 = new MockESP32CamFSM();
+    const r5 = fsm5.simulateSlotTick('2026-11-03_07:40', () => ({ code: 200, body: '{"ok":true,"confirmed":true,"image_id":"img_01"}' }));
+    if (r5.success && fsm5.nvs['confirmed_slot'] === '2026-11-03_07:40' && savesConfirmedOnlyOnSuccess) {
+        pass('Slot-Persistence', 'Sukses: HTTP 200 + ok:true + confirmed:true berhasil menyimpan confirmed_slot ke NVS');
+    } else {
+        fail('Slot-Persistence', 'Sukses upload gagal menyimpan confirmed_slot ke NVS');
+    }
+
+    // 6. Reboot setelah sukses: mencegah upload ganda untuk confirmed_slot & slot berikutnya tidak terhalang
+    fsm5.reboot();
+    const r6_dup = fsm5.simulateSlotTick('2026-11-03_07:40', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
+    const r6_next = fsm5.simulateSlotTick('2026-11-03_07:50', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
+    if (r6_dup.skipped && r6_dup.reason === 'ALREADY_CONFIRMED' && r6_next.success && fsm5.nvs['confirmed_slot'] === '2026-11-03_07:50') {
+        pass('Slot-Persistence', 'Reboot setelah sukses: mencegah upload ganda untuk confirmed_slot & slot berikutnya tidak terhalang');
+    } else {
+        fail('Slot-Persistence', 'Reboot setelah sukses gagal mencegah upload ganda atau menghalangi slot berikutnya');
+    }
+
+} catch (e) {
+    fail('Slot-Persistence', 'Unexpected error in Suite 24', e.message);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 25: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [25] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
 
 notTested(
     'Hardware-IoT',

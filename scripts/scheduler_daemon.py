@@ -20,9 +20,11 @@ import os
 import sys
 import time
 import json
+import threading
 import argparse
 import urllib.request
 import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from PIL import Image
@@ -42,7 +44,7 @@ CONFIG = {
     "start_time_wib": "07:00",
     "end_time_wib": "16:50",
     "slot_interval_minutes": 10,
-    "camera_host": "192.168.1.105", # Default ESP32-CAM LAN IP
+    "camera_host": "192.168.1.105", # Camera IP for diagnostics only
     "camera_timeout_seconds": 6,
     "max_retries": 3,
     "retry_delay_seconds": 2,
@@ -77,6 +79,7 @@ class LeafGrowthScheduler:
             meta_file=self.cfg["metadata_path"],
             calib_factor_mm_per_px=self.cfg.get("calib_factor_mm_per_px", None)
         )
+        self.lock = threading.Lock()
         self.executed_slots = set()
         self.load_history()
 
@@ -212,12 +215,14 @@ class LeafGrowthScheduler:
 
     def ingest_synced_photo(self, raw_bytes, file_name="", expected_size=None, expected_fnv1a=None, expected_checksum=None, captured_at=None, captured_at_ms=None, slot_key=None, hst_day=1):
         """
-        Validates and processes a single deferred-sync JPEG from ESP32-CAM microSD.
+        Validates and processes one JPEG posted directly by ESP32-CAM over Wi-Fi.
         Returns a confirmation dictionary with confirmed=True ONLY when validation and
         storage succeed, ensuring ESP32-CAM never deletes unverified local files.
         """
-        if not raw_bytes or not isinstance(raw_bytes, (bytes, bytearray)) or len(raw_bytes) < 64:
+        if not raw_bytes or not isinstance(raw_bytes, (bytes, bytearray)) or len(raw_bytes) < 100:
             return {"ok": False, "confirmed": False, "error": "Empty or truncated payload"}
+        if bytes(raw_bytes[:3]) != b"\xff\xd8\xff":
+            return {"ok": False, "confirmed": False, "error": "Payload is not a JPEG image"}
 
         actual_size = len(raw_bytes)
         if expected_size is not None and int(expected_size) != actual_size:
@@ -238,19 +243,22 @@ class LeafGrowthScheduler:
         ts_ms = int(raw_ts) if (raw_ts and int(raw_ts) > 1577836800000) else int(now_wib.timestamp() * 1000)
         dt_wib = datetime.fromtimestamp(ts_ms / 1000.0, tz=WIB_TIMEZONE)
         resolved_slot = slot_key or self.get_slot_key(dt_wib)
+        with self.lock:
+            if resolved_slot in self.executed_slots:
+                return {"ok": True, "confirmed": True, "duplicate": True, "kelompok": "Kelompok 5", "slot_key": resolved_slot}
 
-        res = self.pipeline.process_image(
-            input_image=pil_img,
-            plant_id=self.cfg["plant_id"],
-            hst_day=int(hst_day) if hst_day else 1,
-            timestamp=ts_ms,
-            camera_id=self.cfg["camera_id"]
-        )
-        res["sync_source"] = "microSD_deferred_sync"
-        res["sd_file_name"] = str(file_name or "")
-        res["fnv1a"] = actual_fnv1a
-        self.executed_slots.add(resolved_slot)
-        self._log(f"Synced microSD photo confirmed ({file_name}): slot={resolved_slot}, image_id={res['image_id']}, size={actual_size}B")
+            res = self.pipeline.process_image(
+                input_image=pil_img,
+                plant_id=self.cfg["plant_id"],
+                hst_day=int(hst_day) if hst_day else 1,
+                timestamp=ts_ms,
+                camera_id=self.cfg["camera_id"]
+            )
+            res["capture_source"] = "esp32cam_wifi_direct"
+            res["source_file_name"] = str(file_name or "")
+            res["fnv1a"] = actual_fnv1a
+            self.executed_slots.add(resolved_slot)
+            self._log(f"Wi-Fi camera photo processed ({file_name}): slot={resolved_slot}, image_id={res['image_id']}, size={actual_size}B")
 
         return {
             "ok": True,
@@ -294,48 +302,58 @@ class LeafGrowthScheduler:
         print(" Data Authenticity  : 100% REAL DATA ONLY (Zero Simulation/Synthetic)")
         print("==================================================================")
 
-    def run_daemon(self, poll_interval_sec=15):
-        """Runs the continuous scheduler daemon loop."""
-        self._log("Leaf Growth Scheduler Daemon started. Monitoring slots...")
-        self.print_status()
-
-        while True:
-            try:
-                now = self.get_wib_now()
-                # Trigger on 10-minute boundary (e.g. 00, 10, 20, 30, 40, 50)
-                if (now.minute % self.cfg["slot_interval_minutes"] == 0) and self.is_within_window(now):
-                    slot_key = self.get_slot_key(now)
-                    if slot_key not in self.executed_slots:
-                        self.run_slot()
-                time.sleep(poll_interval_sec)
-            except KeyboardInterrupt:
-                self._log("Scheduler Daemon stopped by user.")
-                break
-            except Exception as e:
-                self._log(f"Unexpected error in daemon loop: {e}", "ERROR")
-                time.sleep(poll_interval_sec)
+    def run_receiver(self, host="0.0.0.0", port=8081):
+        """Receive camera-originated JPEG uploads. The ESP32-CAM owns scheduling."""
+        scheduler = self
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path.split("?", 1)[0] != "/api/kelompok5/capture":
+                    self.send_error(404); return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if length < 100 or length > 8 * 1024 * 1024:
+                        raise ValueError("Invalid JPEG payload size")
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        raise ValueError("Truncated request body")
+                    result = scheduler.ingest_synced_photo(
+                        raw, file_name="wifi-camera-upload.jpg",
+                        expected_size=self.headers.get("X-File-Size", length),
+                        expected_fnv1a=self.headers.get("X-Checksum-FNV1A"),
+                        captured_at_ms=self.headers.get("X-Captured-At"),
+                        slot_key=self.headers.get("X-Slot-Key"),
+                        hst_day=self.headers.get("X-HST-Day", 1)
+                    )
+                    body = json.dumps(result).encode("utf-8")
+                    self.send_response(200 if result.get("confirmed") else 422)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers(); self.wfile.write(body)
+                except Exception as exc:
+                    body = json.dumps({"ok": False, "confirmed": False, "error": str(exc)}).encode("utf-8")
+                    self.send_response(400); self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            def log_message(self, fmt, *args):
+                scheduler._log("HTTP receiver: " + (fmt % args))
+        server = ThreadingHTTPServer((host, int(port)), Handler)
+        self._log(f"JPEG receiver listening on http://{host}:{port}/api/kelompok5/capture")
+        self._log("Capture scheduling is owned exclusively by ESP32-CAM; this process only ingests and processes images.")
+        try: server.serve_forever()
+        except KeyboardInterrupt: self._log("JPEG receiver stopped by user.")
+        finally: server.server_close()
 
 
 compute_fnv1a_hex = LeafGrowthScheduler.compute_fnv1a_hex
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Automated 10-Minute Lettuce Growth Scheduler Daemon")
-    parser.add_argument("--run-once", action="store_true", help="Execute single capture slot immediately")
-    parser.add_argument("--daemon", action="store_true", help="Run continuous scheduler daemon")
+    parser = argparse.ArgumentParser(description="Selada Keriting JPEG receiver and CV processor")
+    parser.add_argument("--receiver", action="store_true", help="Run HTTP receiver for ESP32-CAM uploads")
+    parser.add_argument("--host", default="0.0.0.0", help="Receiver bind address")
+    parser.add_argument("--port", type=int, default=8081, help="Receiver port")
     parser.add_argument("--status", action="store_true", help="Display campaign progress report")
-    parser.add_argument("--camera-host", type=str, default=CONFIG["camera_host"], help="ESP32-CAM IP or hostname")
-
     args = parser.parse_args()
-    if args.camera_host:
-        CONFIG["camera_host"] = args.camera_host
-
     scheduler = LeafGrowthScheduler(CONFIG)
-
-    if args.status:
-        scheduler.print_status()
-    elif args.run_once:
-        scheduler.run_slot(force=True)
-    elif args.daemon:
-        scheduler.run_daemon()
+    if args.receiver:
+        scheduler.run_receiver(args.host, args.port)
     else:
         scheduler.print_status()
