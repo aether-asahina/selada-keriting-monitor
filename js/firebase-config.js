@@ -63,12 +63,8 @@
                     return this.escapeHTML(dirty);
                 }
             }
-            // Fallback when DOMParser is unavailable: strip dangerous tags and script/javascript
-            let clean = dirty
-                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                .replace(/on\w+\s*=/gi, '')
-                .replace(/javascript:/gi, '');
-            return clean;
+            // Strict allowlist fallback when DOMParser is unavailable: escape all HTML, then restore only bare formatting tags
+            return this.escapeHTML(dirty).replace(/&lt;(\/?(?:b|i|em|strong|br|code))&gt;/gi, '<$1>');
         },
 
         /**
@@ -102,9 +98,9 @@
         },
 
         /**
-         * Validate telemetry timestamps (must be between year 2020 and now + 60s)
+         * Validate telemetry timestamps (must be between year 2020 and now + 60s; never fabricate Date.now() by default)
          */
-        validateTimestamp(t, fallback = Date.now()) {
+        validateTimestamp(t, fallback = null) {
             const num = Number(t);
             const MIN_VALID_TIME = 1577836800000; // 2020-01-01
             const MAX_VALID_TIME = Date.now() + 60000; // Allow 60s clock skew
@@ -159,24 +155,12 @@
 
     const DEF_SETTINGS = {
         firebase: 'https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app/',
-        firebaseNode: 'kelompok5',
-        groupName: 'Kelompok 5',
         poll: 2000,
         fetchN: 300,
-        unit: 'C',
-        clock: '24',
-        theme: 'light',
-        dry: 65, // Standard optimal range for Selada Keriting (65-78%)
+        dry: 65, // Rentang optimal selada keriting: 65-78%
         wet: 78,
-        camIp: '',
-        rules: {
-            dry: { on: true },
-            wet: { on: true },
-            tmax: { on: true, v: 32 },
-            tmin: { on: true, v: 15 },
-            hmin: { on: true, v: 40 },
-            off: { on: true, v: 15 }
-        }
+        offlineSec: 15, // Data dianggap basi bila lebih lama dari ini
+        camIp: ''
     };
 
     function clone(o) {
@@ -195,26 +179,15 @@
                 const raw = localStorage.getItem(SETTINGS_KEY);
                 if (raw) {
                     const parsed = JSON.parse(raw);
-                    Object.keys(parsed).forEach(k => {
-                        if (k === 'rules' && typeof parsed.rules === 'object') {
-                            Object.keys(parsed.rules).forEach(r => {
-                                this.S.rules[r] = Object.assign({}, this.S.rules[r], parsed.rules[r]);
-                            });
-                        } else {
+                    // Hanya kunci yang masih dipakai; sisa pengaturan versi lama diabaikan.
+                    Object.keys(DEF_SETTINGS).forEach(k => {
+                        if (parsed[k] !== undefined && typeof parsed[k] === typeof DEF_SETTINGS[k]) {
                             this.S[k] = parsed[k];
                         }
                     });
                 }
             } catch (e) {
                 console.warn('[ConfigStore] Failed to load settings from storage:', e);
-            }
-
-            // Migrasi satu kali: redesign UI v2 memakai tema terang sebagai bawaan.
-            // Pengaturan lain (URL Firebase, IP kamera, ambang batas) tidak disentuh.
-            if (!this.S.uiV2) {
-                this.S.theme = 'light';
-                this.S.uiV2 = true;
-                try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.S)); } catch (_) { /* abaikan */ }
             }
 
             if (!SecurityUtils.isValidFirebaseUrl(this.S.firebase)) {
@@ -231,15 +204,13 @@
             }
         }
 
-        reset() {
-            const preservedIp = this.S.camIp;
-            this.S = clone(DEF_SETTINGS);
-            this.S.camIp = preservedIp;
-            this.save();
+        get() {
             return this.S;
         }
 
-        get() {
+        reset() {
+            this.S = clone(DEF_SETTINGS);
+            this.save();
             return this.S;
         }
     }
@@ -265,7 +236,17 @@
         if (!url) return '';
         let u = url.trim();
         if (!u.endsWith('.json')) {
-            u = u.replace(/\/+$/, '') + '/.json';
+            u = u.replace(/\/+$/, '');
+            try {
+                const parsed = new URL(u);
+                if (!parsed.pathname || parsed.pathname === '/') {
+                    u = u + '/kelompok5.json';
+                } else {
+                    u = u + '/.json';
+                }
+            } catch {
+                u = u + '/.json';
+            }
         }
         return u;
     }
@@ -287,6 +268,10 @@
             this.connectionState = 'disconnected'; // 'connected' | 'empty' | 'offline' | 'connecting' | 'disconnected'
 
             this.loadCache();
+        }
+
+        normalizeUrl(url) {
+            return normalizeUrl(url);
         }
 
         loadCache() {
@@ -319,30 +304,43 @@
         }
 
         /**
-         * Parses numeric or WIB string timestamps ("YYYY-MM-DD HH:mm:ss") into epoch ms
+         * Parses numeric or WIB string timestamps ("YYYY-MM-DD HH:mm:ss") into epoch ms.
+         * Returns null when no genuine timestamp can be verified (never fabricates Date.now()).
          */
-        parseFlexibleTimestamp(rawTs, keyOrTimestamp) {
-            if (typeof rawTs === 'number' && Number.isFinite(rawTs) && rawTs > 1e11) {
-                return rawTs;
-            }
-            if (typeof rawTs === 'string' && rawTs.trim()) {
-                const s = rawTs.trim();
-                if (/^\d{10,13}$/.test(s)) {
-                    const n = Number(s);
-                    return s.length === 10 ? n * 1000 : n;
+        parseFlexibleTimestamp(rawTs, keyOrTimestamp, waktuWib) {
+            const tryParseOne = (val) => {
+                if (typeof val === 'number' && Number.isFinite(val) && val > 1e11) {
+                    return val;
                 }
-                const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-                if (isoMatch) {
-                    const parsedWib = Date.parse(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T${isoMatch[4]}:${isoMatch[5]}:${isoMatch[6]}+07:00`);
-                    if (Number.isFinite(parsedWib)) return parsedWib;
+                if (typeof val === 'string' && val.trim()) {
+                    const s = val.trim();
+                    if (s === 'UNSYNCED_RTC') return null;
+                    if (/^\d{10,13}$/.test(s)) {
+                        const n = Number(s);
+                        return s.length === 10 ? n * 1000 : n;
+                    }
+                    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+                    if (isoMatch) {
+                        const parsedWib = Date.parse(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T${isoMatch[4]}:${isoMatch[5]}:${isoMatch[6]}+07:00`);
+                        if (Number.isFinite(parsedWib)) return parsedWib;
+                    }
+                    const fallbackParse = Date.parse(s);
+                    if (Number.isFinite(fallbackParse) && fallbackParse > 1e11) return fallbackParse;
                 }
-                const fallbackParse = Date.parse(s);
-                if (Number.isFinite(fallbackParse)) return fallbackParse;
-            }
-            if (typeof keyOrTimestamp === 'number' && Number.isFinite(keyOrTimestamp)) {
+                return null;
+            };
+
+            const fromRaw = tryParseOne(rawTs);
+            if (fromRaw !== null) return fromRaw;
+
+            const fromWib = tryParseOne(waktuWib);
+            if (fromWib !== null) return fromWib;
+
+            if (typeof keyOrTimestamp === 'number' && Number.isFinite(keyOrTimestamp) && keyOrTimestamp > 1e11) {
                 return keyOrTimestamp;
             }
-            return decodePushTimestamp(keyOrTimestamp) || Date.now();
+            const fromPush = decodePushTimestamp(keyOrTimestamp);
+            return fromPush > 0 ? fromPush : null;
         }
 
         /**
@@ -352,8 +350,11 @@
             if (!obj || typeof obj !== 'object') return null;
 
             const rawTs = obj.timestamp !== undefined ? obj.timestamp : obj.t;
-            const decodedTime = this.parseFlexibleTimestamp(rawTs, keyOrTimestamp);
-            const validatedTime = SecurityUtils.validateTimestamp(decodedTime, Date.now());
+            const decodedTime = this.parseFlexibleTimestamp(rawTs, keyOrTimestamp, obj.waktu_wib);
+            const validatedTime = SecurityUtils.validateTimestamp(decodedTime, null);
+            if (validatedTime === null) {
+                return null;
+            }
 
             // Support both Kelompok 5 Indonesian schema and standard English RTDB schema
             const rawSuhu = obj.suhu !== undefined ? obj.suhu : obj.temperature;
@@ -400,11 +401,37 @@
                 return norm ? [norm] : [];
             }
 
+            const NON_RECORD_KEYS = new Set([
+                'kelompok5', 'history', 'current', 'settings', 'cam_status',
+                'growth_metadata', 'executed_slots', 'cnn_dataset', 'cnn_dataset_hashes'
+            ]);
+
+            // Forward cloud CV growth_metadata to GrowthStore if present
+            const gm = (json.kelompok5 && json.kelompok5.growth_metadata) || json.growth_metadata;
+            if (gm && typeof gm === 'object' && window.GrowthStore && typeof window.GrowthStore.ingestFromRTDB === 'function') {
+                try {
+                    window.GrowthStore.ingestFromRTDB(gm);
+                } catch (e) {
+                    console.warn('[FirebaseClient] Failed to forward growth_metadata to GrowthStore:', e);
+                }
+            }
+
+            // Forward cloud CNN dataset metadata to GrowthStore if present
+            const ds = (json.kelompok5 && json.kelompok5.cnn_dataset) || json.cnn_dataset;
+            if (ds && typeof ds === 'object' && window.GrowthStore && typeof window.GrowthStore.ingestDatasetFromRTDB === 'function') {
+                try {
+                    window.GrowthStore.ingestDatasetFromRTDB(ds);
+                } catch (e) {
+                    console.warn('[FirebaseClient] Failed to forward cnn_dataset to GrowthStore:', e);
+                }
+            }
+
             const rowMap = new Map();
 
             // 1. Extract nested 'kelompok5' records if present (Primary Kelompok 5 node)
             if (json.kelompok5 && typeof json.kelompok5 === 'object') {
                 for (const key of Object.keys(json.kelompok5)) {
+                    if (NON_RECORD_KEYS.has(key)) continue;
                     const item = json.kelompok5[key];
                     if (item && typeof item === 'object') {
                         const parsed = this.normalizeRecord(item, key, source);
@@ -416,6 +443,7 @@
             // 2. Extract nested 'history' and 'current' records if present on root RTDB
             if (json.history && typeof json.history === 'object') {
                 for (const key of Object.keys(json.history)) {
+                    if (NON_RECORD_KEYS.has(key)) continue;
                     const item = json.history[key];
                     if (item && typeof item === 'object') {
                         const parsed = this.normalizeRecord(item, key, source);
@@ -428,8 +456,7 @@
                 if (parsedCur) rowMap.set(parsedCur.t, parsedCur);
             }
 
-            // 3. Extract root-level push records (ignoring non-telemetry nodes)
-            const NON_RECORD_KEYS = new Set(['kelompok5', 'history', 'current', 'settings', 'cam_status']);
+            // 3. Extract top-level push records (ignoring non-telemetry nodes)
             for (const key of Object.keys(json)) {
                 if (NON_RECORD_KEYS.has(key)) continue;
                 const item = json[key];
@@ -466,7 +493,21 @@
                 }
 
                 const json = await response.json();
-                return this.parseDatabaseResponse(json, 'live');
+                let rows = this.parseDatabaseResponse(json, 'live');
+
+                // Fallback non-destruktif: bila node /kelompok5.json kosong tetapi data lama ada di root (/.json), baca root
+                if (rows.length === 0 && /\/kelompok5\.json$/i.test(reqUrl)) {
+                    const rootUrl = reqUrl.replace(/\/kelompok5\.json$/i, '/.json');
+                    const rootResp = await fetch(rootUrl + query, {
+                        signal: controller.signal,
+                        cache: 'no-store'
+                    });
+                    if (rootResp && rootResp.ok) {
+                        const rootJson = await rootResp.json();
+                        rows = this.parseDatabaseResponse(rootJson, 'live');
+                    }
+                }
+                return rows;
             } finally {
                 clearTimeout(timeoutId);
             }
@@ -474,10 +515,11 @@
 
         async testConnection(url) {
             try {
-                if (!SecurityUtils.isValidFirebaseUrl(url)) {
+                const target = url || configManager.get().firebase;
+                if (!SecurityUtils.isValidFirebaseUrl(target)) {
                     return { ok: false, error: 'URL Firebase harus berakhiran .firebaseio.com atau .firebasedatabase.app' };
                 }
-                const rows = await this.fetchRows(url, 5, 6000);
+                const rows = await this.fetchRows(target, 10, 6000);
                 return {
                     ok: true,
                     count: rows.length,
@@ -486,7 +528,7 @@
             } catch (err) {
                 return {
                     ok: false,
-                    error: SecurityUtils.escapeHTML(err.message)
+                    error: SecurityUtils.escapeHTML(err && err.message ? err.message : String(err))
                 };
             }
         }
@@ -518,7 +560,7 @@
 
                     const latestRow = rows[rows.length - 1];
                     const ageSec = Math.max(0, Math.round((Date.now() - latestRow.t) / 1000));
-                    const offlineThresholdSec = (S.rules && S.rules.off && Number.isFinite(S.rules.off.v)) ? S.rules.off.v : 15;
+                    const offlineThresholdSec = Number.isFinite(S.offlineSec) ? S.offlineSec : 15;
 
                     if (ageSec > offlineThresholdSec) {
                         this.connectionState = 'stale';
@@ -611,7 +653,6 @@
 
         restart() {
             this.stop();
-            this.liveRecords = [];
             this.start();
         }
 
@@ -662,7 +703,7 @@
         }
 
         getLatest() {
-            return this.liveRecords.length > 0 ? this.liveRecords[this.liveRecords.length - 1] : null;
+            return this.getLatestGenuine();
         }
 
         getAll() {

@@ -1,0 +1,33 @@
+{
+  "model_id": "model_selada_v2",
+  "model_version": "v2.0.0",
+  "architecture": "MobileNetV2",
+  "format": "h5",
+  "binary_file": "model_selada_v2.h5",
+  "training_source": "google_colab",
+  "exported_at": "2026-11-03T12:07:00Z",
+  "is_test_model": false,
+  "input_shape": [224, 224, 3],
+  "class_names": [
+    "siap_panen",
+    "mendekati_panen",
+    "masa_pertumbuhan"
+  ],
+  "preprocessing": {
+    "color_mode": "RGB",
+    "resize_mode": "bilinear",
+    "target_size": [224, 224],
+    "normalization": "mobilenet_v2_-1_1"
+  },
+  "training_details": {
+    "loss": "categorical_crossentropy",
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "iterations": 210,
+    "keras_version": "3.13.2",
+    "base_model": "MobileNetV2 (frozen)",
+    "head": "GlobalAveragePooling2D -> Dense(128, relu) -> Dropout(0.2) -> Dense(3, softmax)"
+  },
+  "supporting_measurement": "leaf_width_px",
+  "notes": "Model Selada Keriting v2 asli hasil pelatihan Google Colab (3 kelas output aktif: siap_panen, mendekati_panen, masa_pertumbuhan; bukan_selada adalah elemen UI informatif berstatus BELUM TERSEDIA)"
+}

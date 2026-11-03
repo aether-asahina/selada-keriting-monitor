@@ -24,7 +24,7 @@ import threading
 import argparse
 import urllib.request
 import urllib.error
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 from PIL import Image
@@ -269,7 +269,14 @@ class LeafGrowthScheduler:
             "file_size": actual_size,
             "fnv1a": actual_fnv1a,
             "checksum_fnv1a": actual_fnv1a,
-            "quality_status": res["quality_status"]
+            "quality_status": res["quality_status"],
+            "leaf_width_px": res.get("leaf_width_px", 0),
+            "cnn_class": res.get("cnn_class"),
+            "cnn_confidence": res.get("cnn_confidence"),
+            "cnn_status": res.get("cnn_status", "BELUM ADA MODEL"),
+            "model_version": res.get("model_version"),
+            "classified_at": res.get("classified_at"),
+            "is_test_model": bool(res.get("is_test_model", False)),
         }
 
     def print_status(self):
@@ -302,12 +309,74 @@ class LeafGrowthScheduler:
         print(" Data Authenticity  : 100% REAL DATA ONLY (Zero Simulation/Synthetic)")
         print("==================================================================")
 
-    def run_receiver(self, host="0.0.0.0", port=8081):
-        """Receive camera-originated JPEG uploads. The ESP32-CAM owns scheduling."""
+    def run_receiver(self, host="0.0.0.0", port=8080, alt_port=8081):
+        """Receive camera-originated JPEG uploads, CNN dataset management requests, and serve Web UI."""
         scheduler = self
-        class Handler(BaseHTTPRequestHandler):
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        api_dir = os.path.join(repo_root, "api", "kelompok5")
+        if api_dir not in sys.path:
+            sys.path.insert(0, api_dir)
+        from dataset import CNNDatasetService
+        ds_service = CNNDatasetService(allow_local_fallback=True)
+
+        class Handler(SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=repo_root, **kwargs)
+
+            def end_headers(self):
+                self.send_header("Access-Control-Allow-Origin", "*")
+                super().end_headers()
+
+            def _send_json(self, code, payload):
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(int(code))
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Capture-Token, X-Dataset-Label, X-File-Name, X-File-Size, X-Checksum-FNV1A, X-HST-Day, X-Notes")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_OPTIONS(self):
+                self._send_json(200, {"ok": True})
+
+            def do_GET(self):
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                clean = parsed.path
+                qs = parse_qs(parsed.query)
+                if clean == "/api/kelompok5/dataset":
+                    action = (qs.get("action") or [""])[0].strip().lower()
+                    if action == "model_status":
+                        reload_flag = (qs.get("reload") or ["0"])[0] == "1"
+                        code, res = ds_service.get_model_status(force_reload=reload_flag)
+                    else:
+                        code, res = ds_service.list_records()
+                    self._send_json(code, res)
+                    return
+                super().do_GET()
+
             def do_POST(self):
-                if self.path.split("?", 1)[0] != "/api/kelompok5/capture":
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                clean = parsed.path
+                qs = parse_qs(parsed.query)
+                if clean == "/api/kelompok5/dataset":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    raw = self.rfile.read(length) if length > 0 else b""
+                    action = (qs.get("action") or [""])[0].strip().lower()
+                    if action == "register_model":
+                        try:
+                            payload = json.loads(raw.decode("utf-8")) if raw else {}
+                        except Exception:
+                            self._send_json(400, {"ok": False, "error": "Invalid JSON body"})
+                            return
+                        code, res = ds_service.register_model(payload, self.headers)
+                    else:
+                        code, res = ds_service.upload_image(raw, self.headers)
+                    self._send_json(code, res)
+                    return
+                if clean != "/api/kelompok5/capture":
                     self.send_error(404); return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -324,19 +393,49 @@ class LeafGrowthScheduler:
                         slot_key=self.headers.get("X-Slot-Key"),
                         hst_day=self.headers.get("X-HST-Day", 1)
                     )
-                    body = json.dumps(result).encode("utf-8")
-                    self.send_response(200 if result.get("confirmed") else 422)
-                    self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers(); self.wfile.write(body)
+                    self._send_json(200 if result.get("confirmed") else 422, result)
                 except Exception as exc:
-                    body = json.dumps({"ok": False, "confirmed": False, "error": str(exc)}).encode("utf-8")
-                    self.send_response(400); self.send_header("Content-Type", "application/json")
-                    self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+                    self._send_json(400, {"ok": False, "confirmed": False, "error": str(exc)})
+
+            def do_PATCH(self):
+                clean = self.path.split("?", 1)[0]
+                if clean == "/api/kelompok5/dataset":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    raw = self.rfile.read(length) if length > 0 else b"{}"
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self._send_json(400, {"ok": False, "error": "Invalid JSON"}); return
+                    code, res = ds_service.update_record(payload, self.headers)
+                    self._send_json(code, res)
+                    return
+                self.send_error(404)
+
+            def do_PUT(self):
+                self.do_PATCH()
+
+            def do_DELETE(self):
+                clean = self.path.split("?", 1)[0]
+                if clean == "/api/kelompok5/dataset":
+                    from urllib.parse import urlparse, parse_qs
+                    qs = parse_qs(urlparse(self.path).query)
+                    ds_id = (qs.get("dataset_id") or [None])[0]
+                    if not ds_id:
+                        length = int(self.headers.get("Content-Length", "0"))
+                        if length > 0:
+                            try:
+                                ds_id = json.loads(self.rfile.read(length).decode("utf-8")).get("dataset_id")
+                            except Exception:
+                                pass
+                    code, res = ds_service.delete_record(ds_id, self.headers)
+                    self._send_json(code, res)
+                    return
+                self.send_error(404)
+
             def log_message(self, fmt, *args):
                 scheduler._log("HTTP receiver: " + (fmt % args))
         server = ThreadingHTTPServer((host, int(port)), Handler)
-        self._log(f"JPEG receiver listening on http://{host}:{port}/api/kelompok5/capture")
+        self._log(f"Receiver listening on http://{host}:{port} (/api/kelompok5/capture & /api/kelompok5/dataset)")
         self._log("Capture scheduling is owned exclusively by ESP32-CAM; this process only ingests and processes images.")
         try: server.serve_forever()
         except KeyboardInterrupt: self._log("JPEG receiver stopped by user.")

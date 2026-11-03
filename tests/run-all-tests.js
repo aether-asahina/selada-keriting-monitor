@@ -1,1702 +1,683 @@
 /**
- * ==============================================================================
- * AUTOMATED INTEGRITY & SECURITY TEST SUITE
- * Project: Selada Keriting Monitor (Lactuca sativa L.)
- * Hardened Test Runner: Node.js Vanilla Test Runner
- * ==============================================================================
+ * Tes frontend Selada Keriting Monitor (Node.js, tanpa dependensi).
+ * Jalankan: node tests/run-all-tests.js
+ * Opsional: setel TFJS_PATH ke folder paket @tensorflow/tfjs untuk menguji pelatihan LSTM sungguhan.
  */
-
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-// ANSI formatting for high-contrast test reports
-const C = {
-    reset: '\x1b[0m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    yellow: '\x1b[33m',
-    cyan: '\x1b[36m',
-    bold: '\x1b[1m',
-    gray: '\x1b[90m'
-};
+const root = path.resolve(__dirname, '..');
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 
-const results = {
-    pass: 0,
-    fail: 0,
-    notTested: 0,
-    details: []
-};
+let pass = 0;
+let fail = 0;
+function test(name, fn) {
+    return Promise.resolve().then(fn).then(
+        () => { pass++; console.log('  ok   ' + name); },
+        err => { fail++; console.log('  FAIL ' + name + '\n       ' + (err && err.message ? err.message : err)); }
+    );
+}
+function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
+function eq(a, b, msg) { if (a !== b) throw new Error((msg || 'nilai berbeda') + `: ${a} !== ${b}`); }
 
-function pass(category, name, detail = '') {
-    results.pass++;
-    results.details.push({ status: 'PASS', category, name, detail });
-    console.log(`  ${C.green}✓ PASS${C.reset} [${category}] ${name}`);
-    if (detail) console.log(`         ${C.gray}${detail}${C.reset}`);
+// ---------------------------------------------------------------- sandbox
+function makeSandbox() {
+    const store = {};
+    const win = {
+        localStorage: {
+            getItem: k => (k in store ? store[k] : null),
+            setItem: (k, v) => { store[k] = String(v); },
+            removeItem: k => { delete store[k]; }
+        },
+        console, setTimeout, clearTimeout, setInterval, clearInterval, Date, Math, JSON, URL, AbortController,
+        fetch: async () => ({ ok: true, json: async () => [] }),
+        DOMParser: undefined
+    };
+    win.window = win;
+    vm.createContext(win);
+    const load = f => vm.runInContext(read(f), win, { filename: f });
+    return { win, load };
 }
 
-function fail(category, name, error) {
-    results.fail++;
-    results.details.push({ status: 'FAIL', category, name, error: String(error) });
-    console.log(`  ${C.red}✗ FAIL${C.reset} [${category}] ${name}`);
-    console.log(`         ${C.red}Error: ${error}${C.reset}`);
+const DAY = 86400000;
+const WIB = 7 * 3600 * 1000;
+function rec(dayIdx, width, extra) {
+    // Pukul 12:00 WIB pada hari ke-dayIdx sejak 2026-10-01
+    const t = Date.parse('2026-10-01T05:00:00Z') + dayIdx * DAY;
+    return Object.assign({ image_id: 'i' + dayIdx + '_' + width, captured_at: t, leaf_width_px: width, quality_status: 'VALID', hst_day: dayIdx + 1 }, extra || {});
 }
 
-function notTested(category, name, reason) {
-    results.notTested++;
-    results.details.push({ status: 'NOT TESTED', category, name, reason });
-    console.log(`  ${C.yellow}○ NOT TESTED${C.reset} [${category}] ${name}`);
-    console.log(`         ${C.yellow}Reason: ${reason}${C.reset}`);
-}
+(async function main() {
+    console.log('\n== Struktur HTML & menu ==');
+    const html = read('index.html');
+    const appJs = read('js/app.js');
 
-// ------------------------------------------------------------------------------
-// Load Project Files into Mock Browser Sandbox
-// ------------------------------------------------------------------------------
-const rootDir = path.resolve(__dirname, '..');
-
-// In-memory mock localStorage
-const mockStorage = {};
-const localStorageMock = {
-    getItem: (k) => (Object.prototype.hasOwnProperty.call(mockStorage, k) ? mockStorage[k] : null),
-    setItem: (k, v) => { mockStorage[k] = String(v); },
-    removeItem: (k) => { delete mockStorage[k]; },
-    clear: () => { Object.keys(mockStorage).forEach(k => delete mockStorage[k]); }
-};
-
-// Enhanced DOM Element Mock for Reactive Components & ResizeObserver
-class MockElement {
-    constructor(tagName = 'div') {
-        this.tagName = tagName.toUpperCase();
-        this.textContent = '';
-        this.innerHTML = '';
-        this.className = '';
-        this.style = {};
-        this.children = [];
-        this.attributes = {};
-        this.clientWidth = 800;
-        this.clientHeight = 240;
-        this.dataset = {};
-        this.classList = {
-            add: (c) => { if (!this.className.includes(c)) this.className = (this.className + ' ' + c).trim(); },
-            remove: (c) => { this.className = this.className.replace(new RegExp('\\b' + c + '\\b', 'g'), '').trim(); },
-            toggle: (c, force) => {
-                const has = this.className.includes(c);
-                const add = force !== undefined ? force : !has;
-                if (add) this.classList.add(c); else this.classList.remove(c);
-            },
-            contains: (c) => new RegExp('\\b' + c + '\\b').test(this.className)
-        };
-    }
-    setAttribute(k, v) { this.attributes[k] = String(v); }
-    getAttribute(k) { return this.attributes[k] || null; }
-    appendChild(child) { this.children.push(child); return child; }
-    remove() {}
-    addEventListener() {}
-    querySelectorAll() { return []; }
-    querySelector() { return null; }
-}
-
-const windowMock = {
-    localStorage: localStorageMock,
-    location: { origin: 'http://localhost:8080' },
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    document: {
-        createElement: (tag) => new MockElement(tag),
-        getElementById: () => new MockElement(),
-        querySelector: () => new MockElement(),
-        querySelectorAll: () => []
-    }
-};
-
-const sandbox = {
-    window: windowMock,
-    document: windowMock.document,
-    localStorage: localStorageMock,
-    URL: global.URL,
-    console: {
-        log: () => {},
-        warn: () => {},
-        error: () => {},
-        info: () => {}
-    },
-    setTimeout: (fn, ms) => setTimeout(fn, ms),
-    clearTimeout: (id) => clearTimeout(id),
-    setInterval: (fn, ms) => setInterval(fn, ms),
-    clearInterval: (id) => clearInterval(id),
-    Math,
-    Date,
-    String,
-    Number,
-    Array,
-    Object,
-    JSON,
-    RegExp,
-    parseInt,
-    parseFloat,
-    isNaN,
-    isFinite
-};
-
-vm.createContext(sandbox);
-
-function loadScript(relPath) {
-    const fullPath = path.join(rootDir, relPath);
-    const code = fs.readFileSync(fullPath, 'utf8');
-    vm.runInContext(code, sandbox, { filename: relPath });
-}
-
-console.log(`${C.bold}${C.cyan}================================================================${C.reset}`);
-console.log(`${C.bold}${C.cyan} SELADA KERITING MONITOR - COMPREHENSIVE AUTOMATED TEST SUITE   ${C.reset}`);
-console.log(`${C.bold}${C.cyan} Target: Security, Integrity, Hysteresis, DSS & Camera Auditing ${C.reset}`);
-console.log(`${C.bold}${C.cyan}================================================================${C.reset}\n`);
-
-// Load Modules
-try {
-    loadScript('js/firebase-config.js');
-    loadScript('js/dataset.js');
-    loadScript('js/leaf-growth.js');
-    loadScript('js/ai-assistant.js');
-} catch (e) {
-    console.error('Fatal error loading module scripts:', e);
-    process.exit(1);
-}
-
-const Sec = sandbox.window.SecurityUtils;
-const FirebaseEdgeClient = sandbox.window.FirebaseEdgeClient;
-const DatasetStore = sandbox.window.DatasetStore;
-const AIAssistant = sandbox.window.AIAssistant;
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 1: DOM XSS & HTML SANITIZATION DEFENSE
-// ------------------------------------------------------------------------------
-console.log(`${C.bold}--- [1] DOM XSS & HTML Sanitization Tests ---${C.reset}`);
-
-try {
-    const rawXSS = '<script>alert("XSS")</script><img src=x onerror=fetch("http://attacker.com")>';
-    const escaped = Sec.escapeHTML(rawXSS);
-    if (escaped.includes('<script>') || escaped.includes('<img')) {
-        fail('XSS', 'escapeHTML blocks executable tags', 'Escaped string still contains unescaped HTML tags');
-    } else if (escaped.includes('&lt;script&gt;') && escaped.includes('&lt;img')) {
-        pass('XSS', 'escapeHTML blocks executable tags', `Tags converted to entities: ${escaped.substring(0, 40)}...`);
-    } else {
-        fail('XSS', 'escapeHTML blocks executable tags', 'Unexpected transform result');
-    }
-} catch (e) {
-    fail('XSS', 'escapeHTML blocks executable tags', e);
-}
-
-try {
-    const dangerousAttr = '"><script>alert(1)</script><div id="test';
-    const escaped = Sec.escapeHTML(dangerousAttr);
-    if (escaped.includes('"') || escaped.includes('<') || escaped.includes('>')) {
-        fail('XSS', 'escapeHTML quotes and tag brackets', 'Quotes or brackets left unescaped');
-    } else {
-        pass('XSS', 'escapeHTML quotes and tag brackets', 'Double quotes escaped to &quot;');
-    }
-} catch (e) {
-    fail('XSS', 'escapeHTML quotes and tag brackets', e);
-}
-
-try {
-    const mixedPayload = '<p>Normal <b>bold</b> <script>alert(1)</script> <a href="javascript:alert(2)">link</a></p>';
-    const sanitized = Sec.sanitizeHTML(mixedPayload);
-    if (sanitized.includes('<script>') || sanitized.includes('javascript:') || sanitized.includes('alert(1)')) {
-        fail('XSS', 'sanitizeHTML allowlist filtering', 'Script or javascript: URI survived allowlist');
-    } else if (sanitized.includes('<b>bold</b>') && sanitized.includes('<p>')) {
-        pass('XSS', 'sanitizeHTML allowlist filtering', 'Preserves benign markup (p, b) while neutralizing malicious tags');
-    } else {
-        fail('XSS', 'sanitizeHTML allowlist filtering', `Unexpected output: ${sanitized}`);
-    }
-} catch (e) {
-    fail('XSS', 'sanitizeHTML allowlist filtering', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 2: CSV FORMULA INJECTION DEFENSE (CWE-1236)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [2] CSV Formula Injection Defense (CWE-1236) ---${C.reset}`);
-
-const csvPayloads = [
-    { input: '=cmd|\' /C calc\'!A0', expectedPrefix: "'=" },
-    { input: '+SUM(1,2)', expectedPrefix: "'+SUM" },
-    { input: '-10+20', expectedPrefix: "'-10" },
-    { input: '@SUM(A1:A10)', expectedPrefix: "'@SUM" },
-    { input: '\t=1+1', expectedPrefix: "'\t=" },
-    { input: '\r=2+2', expectedPrefix: "'\r=" }
-];
-
-csvPayloads.forEach((item, idx) => {
-    try {
-        const escaped = Sec.escapeCSV(item.input);
-        if (escaped.startsWith(item.expectedPrefix) || escaped.startsWith(`"${item.expectedPrefix}`)) {
-            pass('CSV-Injection', `Payload #${idx + 1} (${item.input.substring(0, 10)}) neutralized`, `Output safely prefixed: ${escaped.substring(0, 20)}...`);
-        } else {
-            fail('CSV-Injection', `Payload #${idx + 1} (${item.input})`, `Failed to prefix with quote: ${escaped}`);
-        }
-    } catch (e) {
-        fail('CSV-Injection', `Payload #${idx + 1}`, e);
-    }
-});
-
-try {
-    const normalNum = Sec.escapeCSV(72.5);
-    const normalStr = Sec.escapeCSV('Normal Text');
-    if (normalNum === '72.5' && normalStr === 'Normal Text') {
-        pass('CSV-Injection', 'Benign data integrity preserved', 'Standard numbers and unquoted text adhere to RFC 4180');
-    } else {
-        fail('CSV-Injection', 'Benign data integrity preserved', `Got num=${normalNum}, str=${normalStr}`);
-    }
-} catch (e) {
-    fail('CSV-Injection', 'Benign data integrity preserved', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 3: SENSOR BOUNDARY & INTEGRITY VALIDATION
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [3] Sensor Boundary & Integrity Validation ---${C.reset}`);
-
-const sensorCases = [
-    { val: 70.5, min: 0, max: 100, def: 0, expected: 70.5, desc: 'Valid float within boundary' },
-    { val: '72.4', min: 0, max: 100, def: 0, expected: 72.4, desc: 'Valid numeric string parsed to float' },
-    { val: NaN, min: 0, max: 100, def: 50, expected: 50, desc: 'NaN returns fallback default' },
-    { val: Infinity, min: 0, max: 100, def: 50, expected: 50, desc: 'Infinity returns fallback default' },
-    { val: -Infinity, min: 0, max: 100, def: 50, expected: 50, desc: '-Infinity returns fallback default' },
-    { val: null, min: 0, max: 100, def: 0, expected: 0, desc: 'null returns fallback default' },
-    { val: undefined, min: 0, max: 100, def: 0, expected: 0, desc: 'undefined returns fallback default' },
-    { val: 'DROP TABLE sensors;', min: 0, max: 100, def: 0, expected: 0, desc: 'SQL injection string rejected' },
-    { val: -999, min: 0, max: 100, def: 0, expected: 0, desc: 'DHT22 error code -999 rejected to fallback default' },
-    { val: 999, min: 0, max: 100, def: 0, expected: 0, desc: 'Analog overflow 999 rejected to fallback default' }
-];
-
-sensorCases.forEach(c => {
-    try {
-        const res = Sec.validateNumber(c.val, c.min, c.max, c.def);
-        if (res === c.expected) {
-            pass('Sensor-Validation', c.desc, `In: ${String(c.val)} -> Out: ${res}`);
-        } else {
-            fail('Sensor-Validation', c.desc, `Expected ${c.expected}, got ${res}`);
-        }
-    } catch (e) {
-        fail('Sensor-Validation', c.desc, e);
-    }
-});
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 4: TIMESTAMP VALIDATION & DEDUPLICATION
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [4] Timestamp Validation & Deduplication ---${C.reset}`);
-
-try {
-    const now = Date.now();
-    const validTs = Sec.validateTimestamp(now);
-    if (validTs === now) {
-        pass('Timestamp', 'Valid epoch timestamp retained', `${validTs}`);
-    } else {
-        fail('Timestamp', 'Valid epoch timestamp retained', `Expected ${now}, got ${validTs}`);
-    }
-} catch (e) {
-    fail('Timestamp', 'Valid epoch timestamp retained', e);
-}
-
-try {
-    const futureBogus = Date.now() + 1000 * 60 * 60 * 24 * 365 * 10; // 10 years in future
-    const normalized = Sec.validateTimestamp(futureBogus);
-    if (Math.abs(normalized - Date.now()) < 5000) {
-        pass('Timestamp', 'Far-future corrupted timestamp normalized to current time', `Normalized: ${normalized}`);
-    } else {
-        fail('Timestamp', 'Far-future corrupted timestamp normalized', `Got ${normalized}`);
-    }
-} catch (e) {
-    fail('Timestamp', 'Far-future timestamp normalized', e);
-}
-
-try {
-    const ancientBogus = 1000; // epoch 1970
-    const normalized = Sec.validateTimestamp(ancientBogus);
-    if (Math.abs(normalized - Date.now()) < 5000) {
-        pass('Timestamp', 'Prehistoric timestamp normalized to current time', `Normalized: ${normalized}`);
-    } else {
-        fail('Timestamp', 'Prehistoric timestamp normalized', `Got ${normalized}`);
-    }
-} catch (e) {
-    fail('Timestamp', 'Prehistoric timestamp normalized', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 5: FIREBASE ENDPOINT SECURITY VALIDATION
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [5] Firebase Endpoint Security Validation ---${C.reset}`);
-
-const fbUrlCases = [
-    { url: 'https://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app', valid: true, desc: 'Production Firebase RTDB URL' },
-    { url: 'https://myproject-default-rtdb.firebaseio.com', valid: true, desc: 'Standard FirebaseIO URL' },
-    { url: 'http://selada-a9428-default-rtdb.asia-southeast1.firebasedatabase.app', valid: false, desc: 'Insecure HTTP scheme rejected' },
-    { url: 'javascript:alert(1)', valid: false, desc: 'javascript: URI scheme rejected' },
-    { url: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==', valid: false, desc: 'data: URI scheme rejected' },
-    { url: 'https://evil-hacker.com/fake-firebase', valid: false, desc: 'Untrusted foreign domain rejected' },
-    { url: 'ftp://firebaseio.com', valid: false, desc: 'FTP protocol rejected' }
-];
-
-fbUrlCases.forEach(c => {
-    try {
-        const res = Sec.isValidFirebaseUrl(c.url);
-        if (res === c.valid) {
-            pass('Firebase-Endpoint', c.desc, `${c.url} -> ${res}`);
-        } else {
-            fail('Firebase-Endpoint', c.desc, `Expected valid=${c.valid}, got ${res}`);
-        }
-    } catch (e) {
-        fail('Firebase-Endpoint', c.desc, e);
-    }
-});
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 6: REAL DATA INTEGRITY & CACHE ISOLATION (ZERO SIMULATION)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [6] Real Data Integrity & Cache Isolation (Zero Simulation) ---${C.reset}`);
-
-try {
-    localStorageMock.clear();
-    const client = FirebaseEdgeClient;
-
-    // Verify empty state: strictly returns empty array without injecting simulated data
-    client.liveRecords = [];
-    const emptyRecords = client.getAll();
-    if (Array.isArray(emptyRecords) && emptyRecords.length === 0) {
-        pass('Data-Integrity', 'Zero-data integrity: client returns empty array without synthetic fallback', 'liveRecords = [] strictly preserved');
-    } else {
-        fail('Data-Integrity', 'Zero-data integrity', `Expected empty array, got ${emptyRecords.length} records`);
-    }
-
-    client.saveCache();
-    const cachedEmpty = localStorageMock.getItem('selada_telemetry_live_cache_v3');
-    if (cachedEmpty === null) {
-        pass('Data-Integrity', 'Empty state is not polluted into persistent cache', 'localStorage remains pristine (null)');
-    } else {
-        fail('Data-Integrity', 'Empty state cache pollution', `Unexpected cache content: ${cachedEmpty}`);
-    }
-
-    // Now ingest genuine live record
-    const rawLive = { kelembapan_tanah: 68.0, suhu: 23.8, kelembapan_udara: 75.0, status: 'live' };
-    const parsedLive = client.normalizeRecord(rawLive, Date.now() + 10, 'live');
-
-    client.currentSource = 'live';
-    client.liveRecords = [parsedLive];
-    client.saveCache();
-
-    const liveRecords = client.getAll();
-    const updatedCache = localStorageMock.getItem('selada_telemetry_live_cache_v3');
-
-    if (liveRecords.length === 1 && liveRecords[0].tanah === 68) {
-        pass('Data-Integrity', 'Live records buffer strictly returns genuine sensor readings', '1 live point returned with tanah=68%');
-    } else {
-        fail('Data-Integrity', 'Live records buffer integrity', `Got ${liveRecords.length} points`);
-    }
-
-    if (updatedCache && updatedCache.includes('68')) {
-        pass('Data-Integrity', 'Persistent cache stores genuine live telemetry only', 'Saved live point to localStorage successfully');
-    } else {
-        fail('Data-Integrity', 'Persistent cache stores genuine live telemetry only', `Cache content: ${updatedCache}`);
-    }
-} catch (e) {
-    fail('Data-Integrity', 'Source segregation & cache isolation', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 7: HYSTERESIS CONTROLLER LOGIC
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [7] Hysteresis Controller Logic (65% ON, 78% OFF) ---${C.reset}`);
-
-function evaluateHysteresis(tanah, previousCommandState) {
-    const DRY_THRESHOLD = 65;
-    const WET_THRESHOLD = 78;
-
-    if (tanah < DRY_THRESHOLD) {
-        return true; // Soil dry -> pump must turn ON
-    } else if (tanah > WET_THRESHOLD) {
-        return false; // Soil wet -> pump must turn OFF
-    } else {
-        return previousCommandState; // Deadband -> maintain previous state
-    }
-}
-
-const hysteresisTransitions = [
-    { tanah: 60.0, prev: false, expected: true, desc: 'Moisture 60% (< 65%) with previous OFF -> turns ON' },
-    { tanah: 64.9, prev: false, expected: true, desc: 'Moisture 64.9% (< 65%) with previous OFF -> turns ON' },
-    { tanah: 68.0, prev: true, expected: true, desc: 'Moisture 68% in deadband with previous ON -> remains ON' },
-    { tanah: 77.9, prev: true, expected: true, desc: 'Moisture 77.9% in deadband with previous ON -> remains ON' },
-    { tanah: 78.1, prev: true, expected: false, desc: 'Moisture 78.1% (> 78%) with previous ON -> turns OFF' },
-    { tanah: 82.0, prev: true, expected: false, desc: 'Moisture 82% (> 78%) with previous ON -> turns OFF' },
-    { tanah: 72.0, prev: false, expected: false, desc: 'Moisture 72% in deadband with previous OFF -> remains OFF' },
-    { tanah: 65.0, prev: false, expected: false, desc: 'Moisture 65.0% boundary with previous OFF -> remains OFF' },
-    { tanah: 65.0, prev: true, expected: true, desc: 'Moisture 65.0% boundary with previous ON -> remains ON' }
-];
-
-hysteresisTransitions.forEach(t => {
-    try {
-        const nextState = evaluateHysteresis(t.tanah, t.prev);
-        if (nextState === t.expected) {
-            pass('Hysteresis', t.desc, `Tanah: ${t.tanah}%, Prev: ${t.prev} => Next: ${nextState}`);
-        } else {
-            fail('Hysteresis', t.desc, `Expected ${t.expected}, got ${nextState}`);
-        }
-    } catch (e) {
-        fail('Hysteresis', t.desc, e);
-    }
-});
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 8: SCADA SEPARATION: PUMP COMMAND VS HARDWARE RELAY STATE
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [8] SCADA Separation: Pump Command vs Relay Feedback ---${C.reset}`);
-
-try {
-    const telemetriWithoutRelay = { tanah: 60.0, suhu: 24.0, udara: 70.0 };
-    const pumpCommand = evaluateHysteresis(telemetriWithoutRelay.tanah, false);
-    const hasRelayFeedback = telemetriWithoutRelay.relayActual !== undefined;
-
-    if (pumpCommand === true && hasRelayFeedback === false) {
-        pass('SCADA-Pump', 'Separates software setpoint from hardware feedback', 'Command=ON while RelayFeedback is strictly marked unavailable (not falsely claimed ON)');
-    } else {
-        fail('SCADA-Pump', 'Separates software setpoint from hardware feedback', `Command=${pumpCommand}, Feedback=${hasRelayFeedback}`);
-    }
-
-    const telemetriWithRelay = { tanah: 60.0, suhu: 24.0, udara: 70.0, relayActual: true };
-    const confirmedCommand = evaluateHysteresis(telemetriWithRelay.tanah, false);
-    if (confirmedCommand === true && telemetriWithRelay.relayActual === true) {
-        pass('SCADA-Pump', 'Hardware relay confirmation recognized when present', 'Both Command=ON and RelayFeedback=True verified');
-    } else {
-        fail('SCADA-Pump', 'Hardware relay confirmation recognized', 'Failed to match feedback state');
-    }
-} catch (e) {
-    fail('SCADA-Pump', 'SCADA verification error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 9: AGRONOMIC SCIENCE: TETENS VPD & GDD THERMAL UNITS
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [9] Agronomic Science: Tetens VPD & Physiological GDD ---${C.reset}`);
-
-function calcVPD(tempC, rhPct) {
-    const es = 0.61078 * Math.exp((17.27 * tempC) / (tempC + 237.3));
-    const ea = es * (rhPct / 100);
-    return Math.max(0, es - ea);
-}
-
-try {
-    const vpdNormal = calcVPD(24.0, 70.0);
-    if (vpdNormal >= 0.85 && vpdNormal <= 0.95) {
-        pass('Agronomy-VPD', 'Tetens VPD calculation accurate at standard room/canopy temp', `T=24°C, RH=70% -> VPD = ${vpdNormal.toFixed(3)} kPa (Optimal: 0.45-0.90 kPa)`);
-    } else {
-        fail('Agronomy-VPD', 'Tetens VPD calculation at 24°C, 70% RH', `Expected ~0.90 kPa, got ${vpdNormal}`);
-    }
-} catch (e) {
-    fail('Agronomy-VPD', 'Tetens formula error', e);
-}
-
-try {
-    const vpdLow = calcVPD(26.0, 95.0);
-    if (vpdLow < 0.25) {
-        pass('Agronomy-VPD', 'Low VPD detection triggers tipburn risk alert', `T=26°C, RH=95% -> VPD = ${vpdLow.toFixed(3)} kPa (< 0.4 kPa: tipburn risk due to stalled transpiration)`);
-    } else {
-        fail('Agronomy-VPD', 'Low VPD detection', `Got ${vpdLow}`);
-    }
-} catch (e) {
-    fail('Agronomy-VPD', 'Low VPD detection error', e);
-}
-
-try {
-    const T_BASE = 4.0;
-    const T_CUTOFF = 28.0;
-    const dailyAvgTemps = [22.0, 24.0, 25.0, 30.0];
-    let gddSum = 0;
-
-    dailyAvgTemps.forEach(t => {
-        const effectiveT = Math.min(t, T_CUTOFF);
-        if (effectiveT > T_BASE) {
-            gddSum += (effectiveT - T_BASE);
-        }
+    await test('menu tepat 4 dan AI Assistant paling bawah', () => {
+        const links = [...html.matchAll(/<a class="nav-link" href="#(\w+)"/g)].map(m => m[1]);
+        eq(links.join(','), 'dashboard,kamera,prediksi,ai');
     });
 
-    if (Math.abs(gddSum - 83.0) < 0.01) {
-        pass('Agronomy-GDD', 'Lettuce thermal degree-days accumulation with cutoff', `Computed GDD sum = ${gddSum} degree-days across 4 days`);
-    } else {
-        fail('Agronomy-GDD', 'Lettuce thermal degree-days accumulation', `Expected 83.0, got ${gddSum}`);
-    }
-} catch (e) {
-    fail('Agronomy-GDD', 'GDD calculation error', e);
-}
+    await test('tidak ada ID ganda di index.html', () => {
+        const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+        const dup = ids.filter((v, i) => ids.indexOf(v) !== i);
+        eq(dup.length, 0, 'ID ganda: ' + dup.join(', '));
+    });
 
-// ------------------------------------------------------------------------------
-// TEST SUITE 10: ESP32-CAM HOST VALIDATOR & SSRF DEFENSE
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [10] ESP32-CAM Host Validator & SSRF Defense ---${C.reset}`);
+    await test('setiap ID yang dipakai app.js ada di index.html', () => {
+        const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+        const used = new Set([...appJs.matchAll(/\$\('#([A-Za-z0-9_-]+)'/g)].map(m => m[1]));
+        const missing = [...used].filter(i => !ids.has(i) && !/^p-/.test(i));
+        eq(missing.length, 0, 'ID hilang: ' + missing.join(', '));
+        ['p-dashboard', 'p-kamera', 'p-prediksi', 'p-ai'].forEach(p => assert(ids.has(p), 'section hilang: ' + p));
+    });
 
-const camHostCases = [
-    { host: '192.168.1.105', valid: true, desc: 'Local private IPv4 address accepted' },
-    { host: '10.0.0.50', valid: true, desc: 'Class A private IP accepted' },
-    { host: 'esp32cam.local', valid: true, desc: 'mDNS .local hostname accepted' },
-    { host: '192.168.1.105:81', valid: true, desc: 'Local IP with stream port accepted' },
-    { host: 'javascript:alert(1)', valid: false, desc: 'javascript: URI scheme rejected' },
-    { host: 'http://169.254.169.254/latest/meta-data', valid: false, desc: 'Cloud metadata SSRF attempt rejected' },
-    { host: '<script>alert(1)</script>', valid: false, desc: 'HTML injection in host rejected' },
-    { host: '127.0.0.1; rm -rf /', valid: false, desc: 'Command injection characters rejected' }
-];
+    await test('bagian yang diminta dihapus tidak ada lagi', () => {
+        const banned = ['p-sensor', 'p-peringatan', 'p-pertumbuhan-daun', 'p-analisis-tanaman', 'p-panduan', 'p-riwayat',
+            'p-otomasi', 'p-pengaturan', 'toastContainer', 'Notifikasi', 'Kanopi', 'Kalori', 'Tetens', 'GDD', 'VPD'];
+        const all = html + appJs;
+        banned.forEach(b => assert(!all.includes(b), 'masih ada: ' + b));
+    });
 
-camHostCases.forEach(c => {
-    try {
-        const res = Sec.isValidCameraHost(c.host);
-        const isValid = Boolean(res);
-        if (isValid === c.valid) {
-            pass('Camera-Host-Security', c.desc, `${c.host} -> valid=${isValid}`);
-        } else {
-            fail('Camera-Host-Security', c.desc, `Expected ${c.valid}, got ${isValid} (raw: ${res})`);
+    await test('script yang dimuat semuanya ada & urutannya benar', () => {
+        const srcs = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+        eq(srcs.join(','), 'js/firebase-config.js,js/dataset.js,js/growth.js,js/forecast.js,js/ai-assistant.js,js/app.js');
+        srcs.forEach(s => assert(fs.existsSync(path.join(root, s)), 'file tidak ada: ' + s));
+        assert(fs.existsSync(path.join(root, 'css/app.css')), 'css/app.css tidak ada');
+    });
+
+    await test('data prediksi tidak dipakai di luar halaman Prediksi', () => {
+        // lastForecast hanya boleh dibaca oleh fungsi prediksi, konteks AI, dan penghapus status
+        const lines = appJs.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => l.includes('lastForecast'));
+        const outside = lines.filter(([, l]) => /renderKPIs|renderTeleChart|renderLeafChart|renderLog/.test(l));
+        eq(outside.length, 0);
+        const dashFns = appJs.slice(appJs.indexOf('function renderKPIs'), appJs.indexOf('function bindDashboard'));
+        assert(!dashFns.includes('forecast') && !dashFns.includes('Forecast'), 'dashboard menyentuh prediksi');
+    });
+
+    console.log('\n== GrowthStore (data lebar daun real) ==');
+    const g = makeSandbox();
+    g.load('js/firebase-config.js');
+    g.load('js/dataset.js');
+    g.load('js/growth.js');
+    const GS = g.win.GrowthStore;
+
+    await test('normalisasi: valid, kelas, URL aman', () => {
+        const r = GS.normalize({ captured_at: 1790000000000, leaf_width_px: '120.5', quality_status: 'valid', cnn_class: 'Siap Panen', cnn_confidence: 0.93, image_url: 'javascript:alert(1)', overlay_url: 'data/growth_images/a.jpg' });
+        eq(r.width, 120.5); eq(r.valid, true); eq(r.cls, 'siap_panen'); eq(r.image, ''); eq(r.overlay, 'data/growth_images/a.jpg');
+    });
+
+    await test('rekaman tanpa waktu valid ditolak', () => {
+        eq(GS.normalize({ captured_at: 'x' }), null);
+        eq(GS.normalize(null), null);
+    });
+
+    await test('bukan_selada dan citra gagal QC tidak masuk deret lebar daun', () => {
+        GS.records = [
+            GS.normalize(rec(0, 100)),
+            GS.normalize(rec(0, 500, { cnn_class: 'bukan_selada' })),
+            GS.normalize(rec(1, 140, { quality_status: 'INVALID_OFFLINE' })),
+            GS.normalize(rec(1, 130))
+        ];
+        const d = GS.daily();
+        eq(d.length, 2); eq(Math.round(d[0].width), 100); eq(Math.round(d[1].width), 130);
+    });
+
+    await test('rata-rata harian & kelas dominan (WIB)', () => {
+        GS.records = [
+            GS.normalize(rec(0, 100, { cnn_class: 'masa_pertumbuhan' })),
+            GS.normalize(rec(0, 120, { cnn_class: 'masa_pertumbuhan' })),
+            GS.normalize(rec(0, 110, { cnn_class: 'mendekati_panen' }))
+        ];
+        const d = GS.daily();
+        eq(d.length, 1); eq(Math.round(d[0].width), 110); eq(d[0].stage, 0); eq(d[0].day, '2026-10-01');
+    });
+
+    await test('hitungan kelas, statistik lebar daun, & status CNN BELUM ADA MODEL', () => {
+        eq(GS.CNN_SPEC.noModelLabel, 'BELUM ADA MODEL');
+        eq(GS.CNN_SPEC.untrainedLabel, 'BELUM ADA MODEL');
+        eq(GS.CNN_SPEC.supportingMeasurement, 'leaf_width_px');
+        eq(GS.CNN_SPEC.classes.length, 4);
+        GS.records = [GS.normalize(rec(0, 100)), GS.normalize(rec(1, 120, { cnn_class: 'siap_panen' }))];
+        const c = GS.classCounts();
+        eq(c.belum, 1); eq(c.siap_panen, 1); eq(GS.hasClassified(), true);
+        const st = GS.widthStats();
+        eq(st.count, 2); eq(st.min, 100); eq(st.max, 120); eq(st.avg, 110); eq(st.byClass.siap_panen.avg, 120);
+        GS.records = [GS.normalize(rec(0, 100))];
+        eq(GS.hasClassified(), false);
+    });
+
+    await test('sinkronisasi growth_metadata dari RTDB map tanpa duplikasi', () => {
+        GS.records = [GS.normalize(rec(0, 100))];
+        GS.ingestFromRTDB({
+            slot1: rec(0, 100),
+            slot2: rec(1, 135, { cnn_class: 'masa_pertumbuhan' })
+        });
+        eq(GS.records.length, 2);
+        eq(GS.latest().width, 135);
+    });
+
+    console.log('\n== DatasetStore & Firebase client ==');
+    const FB = g.win.FirebaseEdgeClient;
+    const DS = g.win.DatasetStore;
+
+    await test('normalisasi telemetri Kelompok 5 (skema Indonesia) & tolak timestamp tidak valid', () => {
+        const r = FB.normalizeRecord({ suhu: 23.46, kelembapan_udara: 68.4, kelembapan_tanah: 72.2, relay: true, timestamp: Date.now() }, 'k1', 'live');
+        eq(r.suhu, 23.5); eq(r.udara, 68); eq(r.tanah, 72); eq(r.relayActual, true);
+        // Rekaman dengan timestamp 0 atau UNSYNCED_RTC harus ditolak agar tidak memalsukan status Live
+        eq(FB.normalizeRecord({ suhu: 23.0, kelembapan_udara: 68, kelembapan_tanah: 72, timestamp: 0, waktu: 'UNSYNCED_RTC' }, 'k2', 'live'), null);
+    });
+
+    await test('normalizeUrl mengarahkan root RTDB ke /kelompok5.json & skip node non-telemetri', () => {
+        const u = FB.normalizeUrl('https://esp32-lactuca-sativa-default-rtdb.asia-southeast1.firebasedatabase.app');
+        assert(u.endsWith('/kelompok5.json'), 'harus mengarah ke /kelompok5.json: ' + u);
+        const parsed = FB.parseDatabaseResponse({
+            growth_metadata: { s1: rec(0, 115) },
+            executed_slots: { s1: { status: 'CONFIRMED' } },
+            rec_1: { suhu: 22.4, kelembapan_udara: 70, kelembapan_tanah: 71, timestamp: Date.now() }
+        });
+        eq(parsed.length, 1);
+        eq(parsed[0].suhu, 22.4);
+    });
+
+    await test('telemetri di luar batas fisik ditolak', () => {
+        eq(FB.normalizeRecord({ suhu: 99, kelembapan_udara: 50, kelembapan_tanah: 50 }, 'k', 'live'), null);
+        eq(FB.normalizeRecord({ suhu: 20, kelembapan_udara: 50 }, 'k', 'live'), null);
+    });
+
+    await test('DatasetStore: zona, jendela waktu, statistik, agregasi menit, filter/pagination, & CSV aman', () => {
+        const now = Date.now();
+        DS.setRecords([
+            { t: now - 120000, tanah: 50, udara: 70, suhu: 22, source: 'live', relayActual: true },
+            { t: now - 30000, tanah: 70, udara: 71, suhu: 23, source: 'live', relayActual: false },
+            { t: now - 20000, tanah: 74, udara: 73, suhu: 23.4, source: 'live', relayActual: false },
+            { t: now, tanah: 90, udara: 72, suhu: 24, source: '=cmd', relayActual: null }
+        ], 'live');
+        eq(DS.zoneOf(50), 'dry'); eq(DS.zoneOf(70), 'ok'); eq(DS.zoneOf(90), 'wet');
+        eq(DS.getWindow(60).length, 3); eq(DS.getWindow(0).length, 4);
+        const zs = DS.calculateZoneShare();
+        eq(zs.count, 4); eq(zs.ok, 50);
+        const st = DS.calculateStats(DS.getAll(), r => r.tanah);
+        eq(st.min, 50); eq(st.max, 90); eq(st.count, 4);
+        const qDry = DS.queryHistory({ status: 'dry', page: 1, per: 10 });
+        eq(qDry.total, 1); eq(qDry.rows[0].tanah, 50);
+        const qAll = DS.queryHistory({ status: 'all', agg: false, search: '', page: 1, per: 2 });
+        eq(qAll.total, 4); eq(qAll.totalPages, 2); eq(qAll.rows.length, 2);
+        const csv = DS.toCSV().split('\n');
+        eq(csv.length, 5);
+        assert(csv[4].includes("'=cmd"), 'sumber berawalan = harus di-escape');
+    });
+
+    await test('CNN Dataset Manager: validasi JPG/PNG/WEBP, tolak Base64/rusak/duplikat, upload tunggal & massal, ubah label, hapus, persistensi reload, & split train/val/test', async () => {
+        const s = makeSandbox();
+        const rtdbStore = {};
+        s.win.fetch = async (url, opts = {}) => {
+            const m = (opts.method || 'GET').toUpperCase();
+            if (url.includes('/kelompok5/cnn_dataset/')) {
+                const key = decodeURIComponent(url.split('/kelompok5/cnn_dataset/')[1].replace(/\.json.*$/, ''));
+                if (m === 'PUT') { rtdbStore[key] = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => rtdbStore[key] }; }
+                if (m === 'PATCH') { Object.assign(rtdbStore[key] || {}, JSON.parse(opts.body)); return { ok: true, status: 200, json: async () => rtdbStore[key] }; }
+                if (m === 'DELETE') { delete rtdbStore[key]; return { ok: true, status: 200, json: async () => null }; }
+            }
+            if (url.endsWith('/kelompok5/cnn_dataset.json')) {
+                return { ok: true, status: 200, json: async () => rtdbStore };
+            }
+            return { ok: false, status: 503, json: async () => ({ ok: false }) };
+        };
+        s.load('js/firebase-config.js');
+        s.load('js/dataset.js');
+        s.load('js/growth.js');
+        const G = s.win.GrowthStore;
+
+        // Buat sampel byte biner JPG, PNG, dan WEBP dengan magic bytes asli (> 100 byte)
+        function makeBytes(header, seed) {
+            const out = new Uint8Array(160);
+            header.forEach((b, i) => { out[i] = b; });
+            for (let i = header.length; i < out.length; i++) out[i] = (i * 31 + seed) & 0xff;
+            return out;
         }
-    } catch (e) {
-        fail('Camera-Host-Security', c.desc, e);
-    }
-});
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 11: 7-TAB NAVIGATION & DOM INTEGRITY
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [11] 7-Tab Navigation & DOM Integrity ---${C.reset}`);
-
-const htmlPath = path.join(rootDir, 'index.html');
-const indexHtmlContent = fs.readFileSync(htmlPath, 'utf8');
-
-const requiredTabs = [
-    { id: 'p-ringkasan', label: 'Dashboard' },
-    { id: 'p-sensor', label: 'Sensor' },
-    { id: 'p-kamera', label: 'Kamera' },
-    { id: 'p-pertumbuhan-daun', label: 'Pertumbuhan Daun' },
-    { id: 'p-riwayat', label: 'Riwayat' },
-    { id: 'p-analisis-tanaman', label: 'Analisis Tanaman' },
-    { id: 'p-ai-assistant', label: 'AI Assistant' },
-    { id: 'p-otomasi', label: 'Otomasi' },
-    { id: 'p-peringatan', label: 'Peringatan' },
-    { id: 'p-pengaturan', label: 'Pengaturan' },
-    { id: 'p-panduan', label: 'Panduan' }
-];
-
-requiredTabs.forEach(t => {
-    if (indexHtmlContent.includes(`id="${t.id}"`)) {
-        pass('DOM-Integrity', `Section tab #${t.id} (${t.label}) exists in index.html`, 'Found matching DOM section container');
-    } else {
-        fail('DOM-Integrity', `Section tab #${t.id} (${t.label})`, 'Missing section ID in index.html');
-    }
-});
-
-if (indexHtmlContent.includes('Model GDD & LSTM') || indexHtmlContent.includes('Akurasi 94.2%')) {
-    fail('Audit-Integrity', 'Unverified LSTM / 94.2% badges removed', 'Found unverified deep learning claim in HTML');
-} else {
-    pass('Audit-Integrity', 'Unverified LSTM / 94.2% badges eliminated', 'Replaced with verified physiological GDD model annotations');
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 12: DATASET OPERATIONS & EXPORT INTEGRITY
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [12] Dataset Store Operations & Export Integrity ---${C.reset}`);
-
-try {
-    const store = DatasetStore;
-    const mockTelemetry = [
-        { t: 1700000000000, tanah: 62.5, suhu: 23.5, udara: 72.0, status: 'ok' },
-        { t: 1700000060000, tanah: 64.0, suhu: 24.0, udara: 70.0, status: 'ok' },
-        { t: 1700000120000, tanah: 70.0, suhu: 24.5, udara: 68.0, status: 'ok' }
-    ];
-    store.records = mockTelemetry;
-
-    const tanahStats = store.calculateStats(mockTelemetry, r => r.tanah);
-    const suhuStats = store.calculateStats(mockTelemetry, r => r.suhu);
-    if (Math.abs(tanahStats.avg - 65.5) < 0.1 && Math.abs(suhuStats.avg - 24.0) < 0.1) {
-        pass('Dataset-Operations', 'calculateStats aggregates averages accurately', `Tanah Avg: ${tanahStats.avg.toFixed(1)}%, Suhu Avg: ${suhuStats.avg.toFixed(1)}°C`);
-    } else {
-        fail('Dataset-Operations', 'calculateStats aggregates averages', `Tanah: ${tanahStats.avg}, Suhu: ${suhuStats.avg}`);
-    }
-
-    const csvContent = store.generateCSV();
-    if (csvContent.includes('Waktu_ISO') && csvContent.includes('Suhu_C') && !csvContent.includes('undefined')) {
-        pass('Dataset-Operations', 'generateCSV produces valid CSV formatted data', 'CSV headers and values verified');
-    } else {
-        fail('Dataset-Operations', 'generateCSV produces valid CSV', `Header or data corruption: ${csvContent.substring(0, 50)}`);
-    }
-} catch (e) {
-    fail('Dataset-Operations', 'Dataset store operations error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 13: RULE-BASED AGRONOMIC DECISION SUPPORT SYSTEM (AI ASSISTANT)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [13] Agronomic Decision Support System (DSS) Intent Routing ---${C.reset}`);
-
-try {
-    const assistant = AIAssistant;
-
-    // Query 1: Tipburn
-    const tipburnResp = assistant.processKnowledgeBase('Bagaimana cara mencegah tipburn pada daun selada?');
-    if (tipburnResp.toLowerCase().includes('kalsium') && tipburnResp.includes('VPD')) {
-        pass('Agronomic-DSS', 'Tipburn inquiry routed to calcium/transpiration agronomic rule', 'Knowledge base accurately references calcium translocation and VPD control');
-    } else {
-        fail('Agronomic-DSS', 'Tipburn inquiry routing', `Response: ${tipburnResp}`);
-    }
-
-    // Query 2: Soil moisture & pump
-    const pumpResp = assistant.processKnowledgeBase('Berapa standar kelembapan tanah dan kapan pompa menyala?');
-    if (pumpResp.includes('65%') && pumpResp.includes('78%')) {
-        pass('Agronomic-DSS', 'Soil moisture inquiry routed to hysteresis rule', 'References 65%-78% field capacity and hysteresis logic');
-    } else {
-        fail('Agronomic-DSS', 'Soil moisture inquiry routing', `Response: ${pumpResp}`);
-    }
-
-    // Query 3: Bolting
-    const boltingResp = assistant.processKnowledgeBase('Suhu sering di atas 28 derajat, apakah memicu bolting?');
-    if (boltingResp.includes('bolting') || boltingResp.includes('bunga')) {
-        pass('Agronomic-DSS', 'High temperature inquiry routed to bolting rule', 'Warns against premature floral initiation (bolting) and bitter sesquiterpene lactones');
-    } else {
-        fail('Agronomic-DSS', 'High temperature inquiry routing', `Response: ${boltingResp}`);
-    }
-} catch (e) {
-    fail('Agronomic-DSS', 'DSS intent routing error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 14: 10-MINUTE SCHEDULER & ASIA/JAKARTA WIB TIMEZONE LOGIC
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [14] 10-Minute Scheduler & Asia/Jakarta WIB Timezone ---${C.reset}`);
-
-try {
-    const GrowthStore = sandbox.window.GrowthStore;
-    const testDate = new Date('2026-10-31T03:00:00Z'); // 10:00 WIB (UTC+7)
-    const wib = GrowthStore.getWIBDate(testDate);
-    if (wib.getHours() === 10) {
-        pass('Scheduler-Timezone', 'UTC to Asia/Jakarta (WIB, UTC+7) conversion accurate', 'UTC 03:00 -> WIB 10:00');
-    } else {
-        fail('Scheduler-Timezone', 'Timezone offset calculation', `Expected 10 WIB, got ${wib.getHours()}`);
-    }
-
-    // Capture Window: 07:00 to 16:50 WIB
-    const morningInside = new Date('2026-10-31T00:05:00Z'); // 07:05 WIB
-    const afternoonInside = new Date('2026-10-31T09:45:00Z'); // 16:45 WIB
-    const nightOutside = new Date('2026-10-31T11:00:00Z'); // 18:00 WIB
-    const earlyOutside = new Date('2026-10-30T23:30:00Z'); // 06:30 WIB
-
-    if (GrowthStore.isWithinCaptureWindow(morningInside) &&
-        GrowthStore.isWithinCaptureWindow(afternoonInside) &&
-        !GrowthStore.isWithinCaptureWindow(nightOutside) &&
-        !GrowthStore.isWithinCaptureWindow(earlyOutside)) {
-        pass('Scheduler-Window', '07:00 WIB - 16:50 WIB daily window boundaries enforced', 'Allows 07:05 & 16:45; Rejects 06:30 & 18:00');
-    } else {
-        fail('Scheduler-Window', 'Capture window boundary check failed');
-    }
-
-    // Slot Key Formatting & Deduplication
-    const slotKey = GrowthStore.getSlotKeyFromTimestamp(testDate.getTime());
-    if (slotKey.includes('10:00')) {
-        pass('Scheduler-SlotKey', '10-minute slot key buckets correctly', `Slot: ${slotKey}`);
-    } else {
-        fail('Scheduler-SlotKey', 'Slot key bucketing error', slotKey);
-    }
-} catch (e) {
-    fail('Scheduler-Timezone', 'Scheduler timezone test error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 15: 42-DAY CAMPAIGN & 1,600 VALID IMAGES TARGET MODEL
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [15] 42-Day Campaign & 1,600 Target Model ---${C.reset}`);
-
-try {
-    const slotsPerDay = 60; // 07:00 to 16:50 inclusive = 590 min / 10 = 59 intervals + 1 = 60 slots
-    const totalDays = 42;
-    const totalOpportunities = slotsPerDay * totalDays;
-    const minTargetValid = 1600;
-
-    if (totalOpportunities === 2520) {
-        pass('Campaign-Model', 'Campaign slot capacity = 2,520 opportunities (60 slots/day x 42 days)', '2,520 total opportunities calculated');
-    } else {
-        fail('Campaign-Model', 'Slot capacity calculation', `Expected 2520, got ${totalOpportunities}`);
-    }
-
-    const minPassRate = (minTargetValid / totalOpportunities) * 100;
-    if (minPassRate >= 63.4 && minPassRate <= 63.6) {
-        pass('Campaign-Model', 'Minimum target 1,600 valid images requires >= 63.5% capture yield', `Required yield: ${minPassRate.toFixed(2)}%`);
-    } else {
-        fail('Campaign-Model', 'Yield percentage calculation', minPassRate);
-    }
-} catch (e) {
-    fail('Campaign-Model', 'Campaign model error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 16: DUPLICATE PREVENTION & CRASH RECOVERY
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [16] Duplicate Prevention & Crash Recovery ---${C.reset}`);
-
-try {
-    const GrowthStore = sandbox.window.GrowthStore;
-    const testSlot = '2026-10-31_14:10';
-    GrowthStore.capturedSlotKeys.add(testSlot);
-
-    if (GrowthStore.capturedSlotKeys.has(testSlot)) {
-        pass('Recovery-Deduplication', 'Duplicate capture prevention: slot key recorded and blocked', `Slot ${testSlot} guarded`);
-    } else {
-        fail('Recovery-Deduplication', 'Deduplication set failed to retain slot key');
-    }
-
-    // Normalizing records with corrupted types
-    const rawCorrupt = {
-        image_id: '<script>alert(1)</script>',
-        captured_at: 'corrupt_string',
-        leaf_width_px: '145.8',
-        leaf_area_px: '9420.2',
-        quality_status: 'VALID'
-    };
-    const norm = GrowthStore.normalizeGrowthRecord(rawCorrupt);
-    if (!norm.image_id.includes('<script>') && typeof norm.leaf_width_px === 'number' && Number.isFinite(norm.captured_at)) {
-        pass('Recovery-Normalization', 'Crash recovery safely normalizes string numbers and neutralizes XSS in image IDs', `Width: ${norm.leaf_width_px}px, Escaped ID: ${norm.image_id}`);
-    } else {
-        fail('Recovery-Normalization', 'Record normalization failed', norm);
-    }
-} catch (e) {
-    fail('Recovery-Deduplication', 'Duplicate prevention error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 17: OFFLINE CAPTURE FAILURE LOGGING (NO SYNTHETIC FABRICATION)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [17] Capture Failure Logging (No Synthetic Data) ---${C.reset}`);
-
-try {
-    const GrowthStore = sandbox.window.GrowthStore;
-    const failedSample = {
-        image_id: 'err_offline_test',
-        plant_id: 'SLD-01',
-        captured_at: Date.now(),
-        leaf_width_px: 0,
-        leaf_area_px: 0,
-        quality_status: 'INVALID_OFFLINE',
-        quality_detail: 'ESP32-CAM unreachable at 192.168.1.105',
-        processing_status: 'FAILED'
-    };
-    const normFailed = GrowthStore.normalizeGrowthRecord(failedSample);
-
-    if (normFailed.quality_status === 'INVALID_OFFLINE' && normFailed.leaf_width_px === 0 && normFailed.leaf_area_px === 0) {
-        pass('Failure-Logging', 'Failed captures record 0 measurements without synthetic data substitution', 'Measurements = 0, status = INVALID_OFFLINE');
-    } else {
-        fail('Failure-Logging', 'Failed capture did not preserve genuine failure state', normFailed);
-    }
-} catch (e) {
-    fail('Failure-Logging', 'Failure logging error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 18: PHYSICAL CALIBRATION UNIT HANDLING (PIXEL VS MILLIMETER)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [18] Physical Calibration Unit Handling ---${C.reset}`);
-
-try {
-    const GrowthStore = sandbox.window.GrowthStore;
-    
-    // Case A: Uncalibrated (calibRatio = null)
-    GrowthStore.calibRatio = null;
-    const statsUncalib = GrowthStore.getCampaignStats();
-    if (statsUncalib.calibrated === false && statsUncalib.dailyGrowthRateMm === null) {
-        pass('Calibration-Handling', 'Uncalibrated system strictly preserves pixel units (null physical mm)', 'Units remain px and px²');
-    } else {
-        fail('Calibration-Handling', 'Uncalibrated state returned physical units unexpectedly');
-    }
-
-    // Case B: Calibrated with known reference target (e.g. 0.45 mm/px)
-    GrowthStore.calibRatio = 0.45;
-    const statsCalib = GrowthStore.getCampaignStats();
-    if (statsCalib.calibrated === true && typeof statsCalib.dailyGrowthRateMm === 'number') {
-        pass('Calibration-Handling', 'Calibrated system translates pixels to physical millimeters accurately', `Calculated rate: ${statsCalib.dailyGrowthRateMm} mm/day`);
-    } else {
-        fail('Calibration-Handling', 'Calibrated state failed to compute physical mm');
-    }
-    GrowthStore.calibRatio = null; // Reset
-} catch (e) {
-    fail('Calibration-Handling', 'Calibration handling error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 19: LEAF GROWTH CSV EXPORT DEFENSE (CWE-1236 MITIGATION)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [19] Leaf Growth CSV Export Defense (CWE-1236) ---${C.reset}`);
-
-try {
-    const GrowthStore = sandbox.window.GrowthStore;
-    const maliciousGrowthRecord = {
-        image_id: "=cmd|'/C calc'!A0",
-        plant_id: "+SUM(1,2)",
-        captured_at: Date.now(),
-        time_wib: '2026-10-31 10:00:00 WIB',
-        hst_day: 24,
-        leaf_width_px: 188,
-        leaf_area_px: 12800,
-        quality_status: 'VALID',
-        processing_status: 'COMPLETED',
-        camera_id: '@EVIL',
-        algorithm_version: 'v1.2-exg-otsu'
-    };
-
-    GrowthStore.records.unshift(GrowthStore.normalizeGrowthRecord(maliciousGrowthRecord));
-    const csvOutput = GrowthStore.generateGrowthCSV();
-
-    if (csvOutput.includes("'=cmd|") && csvOutput.includes("'+SUM(1,2)") && csvOutput.includes("'@EVIL")) {
-        pass('Growth-CSV-Injection', 'CWE-1236 mitigation across leaf growth export: formula characters neutralized', 'Prefixed with single quote defensive escape');
-    } else {
-        fail('Growth-CSV-Injection', 'Leaf growth CSV export vulnerable to injection', csvOutput.slice(0, 300));
-    }
-    GrowthStore.records.shift(); // Clean up test record
-} catch (e) {
-    fail('Growth-CSV-Injection', 'Growth CSV injection test error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 20: RESPONSIVE VIEWPORT BREAKPOINTS & BOUNDARY CONSTRAINTS
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [20] Responsive Viewport Breakpoints & Boundary Containment ---${C.reset}`);
-
-const cssPath = path.join(rootDir, 'css/style.css');
-const cssContent = fs.readFileSync(cssPath, 'utf8');
-
-const targetViewports = [
-    { w: 320, h: 720, name: 'Ultra-narrow Mobile (320x720)' },
-    { w: 360, h: 800, name: 'Standard Android (360x800)' },
-    { w: 390, h: 844, name: 'iPhone 12/13/14 (390x844)' },
-    { w: 430, h: 932, name: 'iPhone Pro Max (430x932)' },
-    { w: 768, h: 1024, name: 'iPad Portrait (768x1024)' },
-    { w: 1024, h: 768, name: 'iPad Landscape (1024x768)' },
-    { w: 1366, h: 768, name: 'Laptop WXGA (1366x768)' },
-    { w: 1920, h: 1080, name: 'Desktop Full HD (1920x1080)' }
-];
-
-// Verify CSS Universal Box-Sizing & Overflow-X Containment
-const hasBoxSizing = cssContent.includes('box-sizing: border-box');
-const hasOverflowXHidden = cssContent.includes('overflow-x: hidden');
-const hasMinWidthZero = cssContent.includes('min-width: 0');
-const hasChartSvgContained = cssContent.includes('.chart-svg-wrap svg') || cssContent.includes('.chart svg');
-
-if (hasBoxSizing && hasOverflowXHidden && hasMinWidthZero && hasChartSvgContained) {
-    pass('Responsive-Core', 'CSS global constraints enforce border-box, min-width: 0, and overflow-x containment', 'Eliminates child flex blowout');
-} else {
-    fail('Responsive-Core', 'CSS missing critical boundary containment declarations');
-}
-
-targetViewports.forEach(vp => {
-    // Assert layout containment rules accommodate this viewport
-    const fitsLayout = vp.w >= 320;
-    if (fitsLayout) {
-        pass('Viewport-Fit', `Viewport ${vp.name} adheres to layout width boundaries`, `Width ${vp.w}px >= 320px minimum constraint`);
-    } else {
-        fail('Viewport-Fit', `Viewport ${vp.name} violates bounds`);
-    }
-});
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 21: CHART LIFECYCLE & EDGE-CASE RESILIENCE
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [21] Chart Lifecycle & Edge-Case Resilience ---${C.reset}`);
-
-try {
-    const dataset = sandbox.window.DatasetStore;
-    
-    // Case 1: Empty Dataset (0 records)
-    dataset.clearHistory();
-    const emptyStats = dataset.calculateStats([], r => r.tanah);
-    if (emptyStats.avg === 0 && emptyStats.cur === 0) {
-        pass('Chart-EdgeCase', 'Empty dataset (0 records) handled without division by zero', 'Averages default to 0.0');
-    } else {
-        fail('Chart-EdgeCase', 'Empty dataset failed', emptyStats);
-    }
-
-    // Case 2: Single Record (1 record)
-    dataset.setRecords([{ t: Date.now(), tanah: 70, udara: 65, suhu: 23 }], 'live');
-    const singleStats = dataset.calculateStats(dataset.getAll(), r => r.tanah);
-    if (singleStats.avg === 70 && singleStats.cur === 70) {
-        pass('Chart-EdgeCase', 'Single record (1 record) computes accurately without NaN delta', 'Values: Tanah 70%');
-    } else {
-        fail('Chart-EdgeCase', 'Single record calculation failed', singleStats);
-    }
-
-    // Case 3: Thousands of Records (Decimation / Windowing)
-    const heavyBatch = [];
-    const baseTime = Date.now() - 3600000;
-    for (let i = 0; i < 1200; i++) {
-        heavyBatch.push({ t: baseTime + i * 3000, tanah: 65 + (i % 10), udara: 70, suhu: 22 });
-    }
-    dataset.setRecords(heavyBatch, 'live');
-    const allCount = dataset.getAll().length;
-    if (allCount > 600) {
-        pass('Chart-EdgeCase', 'Large telemetry dataset (1,200 records) safely bounded and stored', `Stored count: ${allCount}`);
-    } else {
-        fail('Chart-EdgeCase', 'Heavy batching failed');
-    }
-
-    // Case 4: Long Labels & Escaping
-    const longTimeLabel = dataset.formatTime(Date.now(), true);
-    if (longTimeLabel.length <= 12) {
-        pass('Chart-EdgeCase', 'Axis time labels formatted compactly (HH:mm:ss) avoiding SVG overflow', `Label: ${longTimeLabel}`);
-    } else {
-        fail('Chart-EdgeCase', 'Time label too long', longTimeLabel);
-    }
-} catch (e) {
-    fail('Chart-EdgeCase', 'Chart edge case error', e);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 22: NEW DOM SECTIONS & MODAL INTEGRITY
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [22] New Redesign DOM Components & Modal Integrity ---${C.reset}`);
-
-const requiredNewElements = [
-    { id: 'metrics-kpi-grid', desc: '8 KPI Metrics Cards Container' },
-    { id: 'dashboard-main-composition', desc: '3 Key Composition Panels' },
-    { id: 'plant-health-view', desc: 'Plant Health & Contour View' },
-    { id: 'ai-recom-list', desc: 'AI Agronomic Recommendations List' },
-    { id: 'stats-footer-bar', desc: 'Bottom Plant & System Stats Bar' },
-    { id: 'growthDetailModal', desc: 'Image Measurement Inspection Modal' },
-    { id: 'mobileBackdrop', desc: 'Mobile Sidebar Drawer Backdrop' }
-];
-
-requiredNewElements.forEach(item => {
-    if (indexHtmlContent.includes(item.id)) {
-        pass('DOM-Redesign', `Element #${item.id} verified in index.html`, item.desc);
-    } else {
-        fail('DOM-Redesign', `Missing #${item.id} in index.html`);
-    }
-});
-
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 23: 100% REAL DATA AUTHENTICITY & MULTI-MODULE INTEGRATION AUDIT
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [23] 100% Real Data Authenticity & Multi-Module Integration ---${C.reset}`);
-
-try {
-    // 1. Verify zero hardcoded fake numbers in index.html (0.78 kPa, 485 °C·hari, 24.2°C, 57% Siklus Panen)
-    const forbiddenStaticStrings = [
-        '0.78 kPa',
-        '485 °C·hari',
-        '485 degree-days',
-        '24.2°C',
-        '57% Siklus Panen',
-        'DATA SIMULASI'
-    ];
-    const leakedStatics = forbiddenStaticStrings.filter(s => indexHtmlContent.includes(s));
-    if (leakedStatics.length === 0) {
-        pass('Zero-Fake-HTML', 'index.html contains zero hardcoded agronomic/sensor numbers or simulation labels', 'Verified clean initial DOM state');
-    } else {
-        fail('Zero-Fake-HTML', `Found hardcoded fake strings in index.html: ${leakedStatics.join(', ')}`);
-    }
-
-    // 2. Verify Greenhouse, EC, pH, and CO2 are completely removed and redesigned Dashboard chart containers exist
-    const removedFeatures = ['p-greenhouse', 'valEC', 'valPH', 'valCO2', 'EC Nutrisi', 'Derajat pH', 'Konsentrasi CO'];
-    const remainingRemoved = removedFeatures.filter(tok => indexHtmlContent.includes(tok));
-    const requiredDashContainers = ['chartSvgWrap', 'dashPumpChartWrap', 'dashGrowthChartWrap', 'chartLegendBar', 'dashCaptureGallery', 'deviceSummaryStrip'];
-    const missingDashContainers = requiredDashContainers.filter(id => !indexHtmlContent.includes(`id="${id}"`));
-    if (remainingRemoved.length === 0 && missingDashContainers.length === 0) {
-        pass('UI-Redesign-Audit', 'Greenhouse, EC, pH, and CO2 completely removed; interactive Dashboard chart hub & device strip verified');
-    } else {
-        fail('UI-Redesign-Audit', `Removed features found: [${remainingRemoved.join(', ')}], Missing containers: [${missingDashContainers.join(', ')}]`);
-    }
-
-    // 3. Verify empty zone share returns 0% across all zones (not 100% optimal)
-    const emptyShare = sandbox.window.DatasetStore.calculateZoneShare([]);
-    if (emptyShare.dry === 0 && emptyShare.ok === 0 && emptyShare.wet === 0 && emptyShare.count === 0) {
-        pass('Empty-ZoneShare', 'calculateZoneShare([]) returns {dry:0, ok:0, wet:0, count:0} instead of fake 100% optimal');
-    } else {
-        fail('Empty-ZoneShare', 'calculateZoneShare([]) returned non-zero values for empty dataset', JSON.stringify(emptyShare));
-    }
-
-    // 4. Verify calculateStats([]) reports count=0 and generateStatHTML renders NO DATA / —
-    const emptySt = sandbox.window.DatasetStore.calculateStats([], r => r.tanah);
-    const emptyStHtml = sandbox.window.DatasetStore.generateStatHTML(emptySt, '%', 0);
-    if (emptySt.count === 0 && emptySt.tr === 'NO DATA' && emptyStHtml.includes('NO DATA')) {
-        pass('Empty-Stats-HTML', 'Empty dataset stats render explicit NO DATA instead of misleading 0% readings');
-    } else {
-        fail('Empty-Stats-HTML', 'Empty dataset stats failed NO DATA check', emptyStHtml);
-    }
-
-    // 5. Verify AIAssistant.calculateVPD returns null (not 0.65) on invalid inputs
-    const nullVpd = sandbox.window.AIAssistant.calculateVPD(NaN, undefined);
-    if (nullVpd === null) {
-        pass('VPD-No-Fallback', 'AIAssistant.calculateVPD(NaN, undefined) returns null instead of fake 0.65 kPa fallback');
-    } else {
-        fail('VPD-No-Fallback', `Expected null, got ${nullVpd}`);
-    }
-
-    // 6. Verify Firebase RTDB parser merges kelompok5, history, current, and root telemetry keys while ignoring settings
-    const mixedRtdbPayload = {
-        settings: { interval: 2000 },
-        kelompok5: {
-            '-O1': { kelembapan_tanah: 66, kelembapan_udara: 70, suhu: 24.1, timestamp: 1730000001000 }
-        },
-        history: {
-            '-O2': { soil: 67, humidity: 71, temperature: 24.2, pump: true, timestamp: 1730000005000 }
-        },
-        '-O3': { kelembapan_tanah: 68, kelembapan_udara: 72, suhu: 24.3, timestamp: 1730000009000 }
-    };
-    const parsedMixed = sandbox.window.FirebaseEdgeClient.parseDatabaseResponse(mixedRtdbPayload);
-    if (parsedMixed.length === 3 && parsedMixed[0].tanah === 66 && parsedMixed[1].tanah === 67 && parsedMixed[2].tanah === 68) {
-        pass('RTDB-Parser-Integration', 'parseDatabaseResponse merges kelompok5, history, and root records while ignoring non-telemetry settings');
-    } else {
-        fail('RTDB-Parser-Integration', `Unexpected parsed count: ${parsedMixed.length}`);
-    }
-
-    // 7. Verify CSS responsive fixes for .sub-chart-wrap, .grid on <=960px, and .gallery-grid
-    const hasSubChartWrap = cssContent.includes('.sub-chart-wrap') && cssContent.includes('height: 140px');
-    const hasSideclose = cssContent.includes('.sideclose');
-    if (hasSubChartWrap && hasSideclose) {
-        pass('CSS-Chart-Subgrid', 'CSS defines .sub-chart-box, .sub-chart-wrap (140px bounded), and mobile .sideclose rules');
-    } else {
-        fail('CSS-Chart-Subgrid', 'Missing .sub-chart-wrap or .sideclose CSS rules');
-    }
-
-    // 8. Verify complete Kelompok 5 migration & zero leftover kelompok2 references across application files
-    const configDefaults = sandbox.window.ConfigStore.get();
-    if (configDefaults.firebaseNode === 'kelompok5' && configDefaults.groupName === 'Kelompok 5' && indexHtmlContent.includes('Kelompok 5') && !indexHtmlContent.includes('kelompok2')) {
-        pass('Kelompok5-Migration', 'ConfigStore, RTDB parser, and index.html consistently use Kelompok 5 (/kelompok5) with zero kelompok2 leftovers');
-    } else {
-        fail('Kelompok5-Migration', 'Found remaining kelompok2 reference or missing Kelompok 5 configuration');
-    }
-
-    // 9. Verify ESP32-CAM Wi-Fi scheduler and direct JPEG upload (no microSD).
-    const esp32InoPath = path.join(rootDir, 'firmware/esp32_kelompok5_sensor/esp32_kelompok5_sensor.ino');
-    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
-    const esp32Ino = fs.existsSync(esp32InoPath) ? fs.readFileSync(esp32InoPath, 'utf8') : '';
-    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
-
-    const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
-    const hasZeroBlockingDelay = !(/\bdelay\s*\(/.test(stripComments(esp32Ino))) && !(/\bdelay\s*\(/.test(stripComments(esp32CamIno)));
-    const hasWifiDirectCapture = esp32CamIno.includes('"/stream"') &&
-        esp32CamIno.includes('RECEIVER_URL') &&
-        esp32CamIno.includes('X-Slot-Key') &&
-        esp32CamIno.includes('X-Checksum-FNV1A') &&
-        esp32CamIno.includes('configTime') &&
-        !esp32CamIno.includes('SD_MMC') &&
-        !esp32CamIno.includes('SD_MMC.h');
-    const receiverSource = fs.readFileSync(path.join(rootDir, 'scripts/scheduler_daemon.py'), 'utf8');
-    const browserSource = fs.readFileSync(path.join(rootDir, 'js/leaf-growth.js'), 'utf8');
-    const hasSingleScheduler = receiverSource.includes('def run_receiver') &&
-        !receiverSource.includes('def run_daemon') &&
-        browserSource.includes('this.schedulerActive = false');
-
-    if (esp32Ino.includes('/kelompok5.json') && hasZeroBlockingDelay && hasWifiDirectCapture && hasSingleScheduler) {
-        pass('Firmware-Kelompok5-Audit', 'ESP32-CAM keeps /stream on :81, schedules 10-minute WIB captures, uploads JPEG directly over Wi-Fi with slot/checksum metadata, and has no microSD code or duplicate browser/server scheduler');
-    } else {
-        fail('Firmware-Kelompok5-Audit', 'ESP32-CAM Wi-Fi capture architecture or single-scheduler verification failed');
-    }
-} catch (e) {
-    fail('Real-Data-Audit', 'Unexpected error in Suite 23', e.message);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 24: ESP32-CAM SLOT PERSISTENCE & NVS STATE MANAGEMENT
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [24] ESP32-CAM Slot Persistence & NVS State Management ---${C.reset}`);
-
-try {
-    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
-    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
-
-    const hasAttemptedSlot = esp32CamIno.includes('attemptedSlotKey') && esp32CamIno.includes('attempted_slot');
-    const hasConfirmedSlot = esp32CamIno.includes('confirmedSlotKey') && esp32CamIno.includes('confirmed_slot');
-    const hasStrictConfirmedCheck = esp32CamIno.includes('code==200') &&
-        esp32CamIno.includes('response.indexOf("\\"ok\\":true")') &&
-        esp32CamIno.includes('response.indexOf("\\"confirmed\\":true")');
-    const savesConfirmedOnlyOnSuccess = esp32CamIno.includes('prefs.putString("confirmed_slot",confirmedSlotKey)');
-
-    // Model the exact state machine of ESP32-CAM in memory to test all 6 runtime scenarios
-    class MockESP32CamFSM {
-        constructor() {
-            this.nvs = {}; // Persistent NVS Flash (survives reboots)
-            this.reboot();
-        }
-
-        reboot() {
-            // RAM variables reset on reboot
-            this.attemptedSlotKey = '';
-            // NVS persists across reboots
-            this.confirmedSlotKey = this.nvs['confirmed_slot'] || '';
-            this.campaignStartEpoch = this.nvs['campaign_start'] || 1762124400;
-        }
-
-        simulateSlotTick(slotKey, networkSimulator) {
-            // Evaluates loop() condition
-            if (slotKey !== this.confirmedSlotKey && slotKey !== this.attemptedSlotKey) {
-                this.attemptedSlotKey = slotKey; // marked in RAM as attempted
-                const res = networkSimulator();
-                // Strictly require HTTP 200 AND JSON ok:true AND confirmed:true
-                if (res.code === 200 && res.body && res.body.includes('"ok":true') && res.body.includes('"confirmed":true')) {
-                    this.confirmedSlotKey = slotKey;
-                    this.nvs['confirmed_slot'] = this.confirmedSlotKey; // Persisted to NVS
-                    return { success: true, slot: slotKey };
+        const jpg1 = makeBytes([0xff, 0xd8, 0xff, 0xe0], 1);
+        const png1 = makeBytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 2);
+        const webp1 = makeBytes([0x52, 0x49, 0x46, 0x46, 0x90, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50], 3);
+        const jpg2 = makeBytes([0xff, 0xd8, 0xff, 0xe0], 4);
+        const base64Bytes = new Uint8Array(Buffer.from('data:image/jpeg;base64,' + 'A'.repeat(140)));
+
+        // 1. Tolak Base64, file rusak, dan format tidak valid
+        eq(G.detectImageFormat(base64Bytes).ok, false);
+        eq(G.normalizeDatasetRecord({ dataset_id: 'bad1', label: 'siap_panen', image_url: 'data:image/png;base64,AAA' }), null);
+        eq(G.validateCandidateFile({ bytes: jpg1, label: 'siap_panen', corrupt: true }).ok, false);
+        eq(G.validateCandidateFile({ bytes: new Uint8Array(150), label: 'siap_panen' }).ok, false);
+
+        // 2. Upload tunggal & massal (4 kelas) dengan progress callback
+        const progressSteps = [];
+        const batchRes = await G.uploadDatasetBatch([
+            { fileName: 'panen.jpg', bytes: jpg1, width: 320, height: 240, label: 'siap_panen', leafWidthPx: 162, hst: 35 },
+            { fileName: 'mendekati.png', bytes: png1, width: 320, height: 240, label: 'mendekati_panen', leafWidthPx: 138, hst: 28 },
+            { fileName: 'tumbuh.webp', bytes: webp1, width: 320, height: 240, label: 'masa_pertumbuhan', leafWidthPx: 94, hst: 14 },
+            { fileName: 'bukan.jpg', bytes: jpg2, width: 320, height: 240, label: 'bukan_selada', leafWidthPx: 0, hst: null }
+        ], {
+            onProgress: p => progressSteps.push(p.percent)
+        });
+        eq(batchRes.ok, true);
+        eq(batchRes.successCount, 4);
+        assert(progressSteps.includes(100), 'progress harus mencapai 100%');
+        eq(G.datasetRecords().length, 4);
+
+        // 3. Deteksi duplikasi FNV-1a menolak upload ulang gambar yang sama
+        const dupRes = await G.uploadDatasetItem({ fileName: 'duplikat.jpg', bytes: jpg1, width: 320, height: 240, label: 'siap_panen' });
+        eq(dupRes.ok, false);
+        eq(dupRes.code, 'DUPLICATE_IN_DB');
+
+        // 4. Statistik per kelas, pencarian, filter, & split Train/Val/Test
+        const st = G.datasetClassStats();
+        eq(st.total, 4);
+        eq(st.byClass.siap_panen.count, 1);
+        eq(st.byClass.siap_panen.avgWidth, 162);
+        eq(st.cnnStatus, 'BELUM ADA MODEL');
+
+        const split = G.buildTrainValTestSplit();
+        eq(split.model_status, 'BELUM ADA MODEL');
+        eq(split.training_target, 'google_colab');
+        assert(split.colab_export_contract && Array.isArray(split.colab_export_contract.class_names_template), 'kontrak ekspor Colab wajib tersedia');
+        eq(split.total, 4);
+
+        const qSearch = G.queryGallery({ source: 'dataset', search: 'mendekati.png', page: 1, per: 8 });
+        eq(qSearch.total, 1);
+        eq(qSearch.rows[0].label, 'mendekati_panen');
+
+        // 5. Ubah label & verifikasi persistensi di RTDB + localStorage setelah reload
+        const targetId = qSearch.rows[0].id;
+        const upRes = await G.updateDatasetLabel(targetId, 'siap_panen', 'Revisi label ke siap panen');
+        eq(upRes.ok, true);
+        eq(G.datasetClassStats().byClass.siap_panen.count, 2);
+        eq(rtdbStore[targetId].label, 'siap_panen');
+
+        // Simulasikan reload halaman (sandbox baru membaca dari localStorage & RTDB)
+        const sReload = makeSandbox();
+        sReload.win.localStorage.setItem('selada-cnn-dataset-cache-v1', s.win.localStorage.getItem('selada-cnn-dataset-cache-v1'));
+        sReload.load('js/firebase-config.js');
+        sReload.load('js/dataset.js');
+        sReload.load('js/growth.js');
+        const GReload = sReload.win.GrowthStore;
+        eq(GReload.datasetRecords().length, 4);
+        eq(GReload.datasetClassStats().byClass.siap_panen.count, 2);
+
+        // 6. Hapus dengan konfirmasi & verifikasi terhapus dari RTDB + cache
+        const delRes = await G.deleteDatasetRecord(targetId);
+        eq(delRes.ok, true);
+        eq(G.datasetRecords().length, 3);
+        eq(rtdbStore[targetId], undefined);
+    });
+
+    await test('Registrasi Model CNN Colab: validasi 7 lapis, fallback BELUM ADA MODEL, atomic rollback, dan inference MODEL PENGUJIAN', () => {
+        const s = makeSandbox();
+        s.load('js/firebase-config.js');
+        s.load('js/dataset.js');
+        s.load('js/growth.js');
+        const G = s.win.GrowthStore;
+
+        // Default: BELUM ADA MODEL & tidak mengarang prediksi
+        eq(G.getModelStatus().available, false);
+        eq(G.getModelStatus().status, 'BELUM ADA MODEL');
+        const noPred = G.runInference(null, { leafWidthPx: 140 });
+        eq(noPred.cnn_status, 'BELUM ADA MODEL');
+        eq(noPred.cnn_class, null);
+        eq(noPred.cnn_confidence, null);
+
+        const activeClasses = ['siap_panen', 'mendekati_panen', 'masa_pertumbuhan'];
+        const uiClasses = ['siap_panen', 'mendekati_panen', 'masa_pertumbuhan', 'bukan_selada'];
+        const makeBundle = (ver = 'v1.0.0-colab-test', overrides = {}) => {
+            const meta = Object.assign({
+                model_id: 'model_selada_v2',
+                model_version: ver,
+                architecture: 'MobileNetV2',
+                format: 'h5',
+                training_source: 'google_colab',
+                is_test_model: true,
+                input_shape: [64, 64, 3],
+                class_names: activeClasses.slice(),
+                preprocessing: {
+                    color_mode: 'RGB',
+                    resize_mode: 'bilinear',
+                    target_size: [64, 64],
+                    normalization: 'rescale_0_1'
                 }
-                return { success: false, slot: slotKey, error: res.error || `HTTP ${res.code}` };
-            }
-            return { skipped: true, reason: slotKey === this.confirmedSlotKey ? 'ALREADY_CONFIRMED' : 'ALREADY_ATTEMPTED' };
+            }, overrides.metadata || {});
+            const evaluation = Object.assign({
+                accuracy: 0.94,
+                precision_macro: 0.93,
+                recall_macro: 0.93,
+                f1_macro: 0.93,
+                class_names: activeClasses.slice(),
+                confusion_matrix: [[10, 0, 0], [0, 10, 0], [0, 0, 10]]
+            }, overrides.evaluation || {});
+            const weights = {
+                kernel: [
+                    [-0.4, 0.1, 0.2],
+                    [2.5, 1.2, 0.4],
+                    [-0.3, 0.1, 0.2],
+                    [0.2, 0.1, 0.0],
+                    [0.8, 0.3, 0.1],
+                    [0.1, 0.1, 0.1]
+                ],
+                bias: [0.3, 0.1, -0.1]
+            };
+            const header = Buffer.from('\x89HDF\r\n\x1a\n\x00\x00\x00\x00\x00\x00\x00\x00', 'binary');
+            const trailer = Buffer.from('__SELADA_PORTABLE_WEIGHTS_JSON__:' + JSON.stringify(weights), 'utf8');
+            return {
+                'class_names.json': overrides.classNames || activeClasses.slice(),
+                'metadata.json': meta,
+                'evaluation.json': evaluation,
+                'model_selada_v2.h5': overrides.binBytes || new Uint8Array(Buffer.concat([header, trailer]))
+            };
+        };
+
+        // 1. Tolak urutan kelas yang tidak sinkron antara class_names.json dan metadata.json
+        const badOrder = G.registerOrImportModel(makeBundle('v0.1', {
+            classNames: ['mendekati_panen', 'siap_panen', 'masa_pertumbuhan']
+        }));
+        eq(badOrder.ok, false);
+        eq(badOrder.stage, 'label_order');
+        eq(G.getModelStatus().status, 'BELUM ADA MODEL');
+
+        // 2. Tolak pemaksaan 4 kelas pada model_selada_v2.h5 (model hanya 3 kelas aktif)
+        const badFour = G.registerOrImportModel(makeBundle('v0.2', {
+            classNames: ['siap_panen', 'mendekati_panen', 'masa_pertumbuhan', 'bukan_selada']
+        }));
+        eq(badFour.ok, false);
+        eq(badFour.stage, 'classes');
+
+        // 3. Aktifkan model_selada_v2.h5 pengujian teknis yang valid (ditandai MODEL PENGUJIAN)
+        const okReg = G.registerOrImportModel(makeBundle('v2.0.0-test'));
+        eq(okReg.ok, true);
+        eq(G.getModelStatus().available, true);
+        eq(G.getModelStatus().status, 'MODEL PENGUJIAN');
+        eq(G.getModelStatus().model_version, 'v2.0.0-test');
+        eq(G.getModelStatus().is_test_model, true);
+        eq(G.getModelStatus().binary_file, 'model_selada_v2.h5');
+        eq(G.CLASSES.bukan_selada.statusBadge, 'BELUM TERSEDIA');
+        eq(G.CLASSES.bukan_selada.activeInModel, false);
+
+        // 4. Atomic Rollback: gagal import model baru wajib mempertahankan model v2.0.0-test sebelumnya!
+        const failedUpgrade = G.registerOrImportModel(makeBundle('v2.1.0-broken', {
+            binBytes: new Uint8Array(Buffer.from('CORRUPT_HEADER_NOT_H5_AT_ALL_000000'))
+        }));
+        eq(failedUpgrade.ok, false);
+        eq(failedUpgrade.rolledBackToPrevious, true);
+        eq(G.getModelStatus().available, true);
+        eq(G.getModelStatus().model_version, 'v2.0.0-test');
+
+        // 5. Jalankan inferensi pada piksel RGB nyata & verifikasi output hanya 3 kelas aktif
+        const rgb = new Uint8Array(80 * 80 * 3);
+        for (let i = 0; i < rgb.length; i += 3) {
+            rgb[i] = 45; rgb[i + 1] = 200; rgb[i + 2] = 55;
         }
-    }
+        const pred = G.runInference({ rgbBytes: rgb, width: 80, height: 80 }, { leafWidthPx: 164, timestampMs: 1790000000000 });
+        eq(pred.cnn_status, 'MODEL PENGUJIAN');
+        assert(activeClasses.includes(pred.cnn_class), 'kelas prediksi wajib salah satu dari 3 kelas aktif');
+        assert(pred.cnn_class !== 'bukan_selada', 'bukan_selada dilarang menjadi output prediksi model');
+        assert(pred.cnn_confidence > 0 && pred.cnn_confidence <= 1, 'confidence wajib berada di (0, 1]');
+        eq(pred.model_version, 'v2.0.0-test');
+        eq(pred.classified_at, 1790000000000);
+        eq(pred.is_test_model, true);
+    });
 
-    // 1. Reboot sebelum upload: slot unconfirmed tetap dieksekusi setelah reboot
-    const fsm1 = new MockESP32CamFSM();
-    fsm1.reboot();
-    const r1 = fsm1.simulateSlotTick('2026-11-03_07:00', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
-    if (r1.success && fsm1.confirmedSlotKey === '2026-11-03_07:00' && hasAttemptedSlot && hasConfirmedSlot) {
-        pass('Slot-Persistence', 'Reboot sebelum upload: slot unconfirmed dieksekusi & dikonfirmasi pasca-reboot');
+    await test('pengaturan lama yang tidak dipakai diabaikan', () => {
+        const s = makeSandbox();
+        s.win.localStorage.setItem('selada-dash-v3', JSON.stringify({ theme: 'dark', rules: { off: { v: 1 } }, camIp: '10.0.0.5', dry: 60 }));
+        s.load('js/firebase-config.js');
+        const S = s.win.ConfigStore.get();
+        eq(S.camIp, '10.0.0.5'); eq(S.dry, 60); eq(S.theme, undefined); eq(S.rules, undefined); eq(S.offlineSec, 15);
+    });
+
+    console.log('\n== Forecast (LSTM) ==');
+    const f = makeSandbox();
+    f.load('js/forecast.js');
+    const FC = f.win.Forecast;
+
+    await test('konfigurasi: 4 hari ke depan', () => eq(FC.HORIZON, 4));
+
+    await test('data kurang dari minimum → tidak ada prediksi', async () => {
+        const r = await FC.run([{ t: 0, width: 1, stage: null }]);
+        eq(r.ok, false); eq(r.have, 1); eq(r.need, FC.MIN_DAYS);
+    });
+
+    await test('histori observasi nyata murni: tolak data sintetis/interpolasi/prediksi', () => {
+        const out = FC.validateRealDaily([
+            { day: '2026-10-01', t: 1000, width: 100, stage: 0 },
+            { day: '2026-10-02', t: 2000, width: 110, stage: 0, interpolated: true },
+            { day: '2026-10-03', t: 3000, width: 120, stage: 1, synthetic: true },
+            { day: '2026-10-04', t: 4000, width: 130, stage: 1, predicted: true },
+            { day: '2026-10-05', t: 5000, width: 140, stage: 1 }
+        ]);
+        eq(out.length, 2);
+        eq(out[0].width, 100);
+        eq(out[1].width, 140);
+        eq(FC.fillGaps, undefined);
+    });
+
+    const tfPath = process.env.TFJS_PATH;
+    if (tfPath) {
+        await test('LSTM sungguhan: 4 prediksi finite & non-negatif', async () => {
+            const tf = require(tfPath);
+            f.win.tf = tf;
+            const daily = [];
+            for (let i = 0; i < 12; i++) daily.push({ day: 'd' + i, t: Date.parse('2026-10-01T00:00:00Z') + i * DAY, width: 80 + i * 6, stage: i < 5 ? 0 : (i < 9 ? 1 : 2) });
+            const r = await FC.run(daily);
+            assert(r.ok, 'run gagal');
+            eq(r.forecast.length, 4);
+            r.forecast.forEach(d => { assert(Number.isFinite(d.width) && d.width >= 0, 'lebar tidak valid'); assert([0, 1, 2].includes(d.stage), 'tahap tidak valid'); });
+            eq(r.forecast[0].t, daily[11].t + DAY);
+            assert(r.useStage, 'seharusnya memakai tahap CNN');
+            console.log('       prediksi: ' + r.forecast.map(d => d.width.toFixed(1) + '/' + d.stage).join('  ') + '  MSE=' + r.loss.toFixed(5));
+        });
+        await test('LSTM tanpa kelas CNN: hanya lebar daun', async () => {
+            const daily = [];
+            for (let i = 0; i < 9; i++) daily.push({ day: 'd' + i, t: Date.parse('2026-10-01T00:00:00Z') + i * DAY, width: 90 + i * 5, stage: null });
+            const r = await FC.run(daily);
+            assert(r.ok && !r.useStage);
+            r.forecast.forEach(d => eq(d.stage, null));
+        });
     } else {
-        fail('Slot-Persistence', 'Reboot sebelum upload gagal memproses slot unconfirmed');
+        console.log('  --   tes LSTM sungguhan dilewati (setel TFJS_PATH untuk menjalankannya)');
     }
 
-    // 2. Timeout: slot tidak ditandai confirmed_slot di NVS
-    const fsm2 = new MockESP32CamFSM();
-    const r2 = fsm2.simulateSlotTick('2026-11-03_07:10', () => ({ code: -1, error: 'Connection timeout', body: '' }));
-    if (!r2.success && !fsm2.nvs['confirmed_slot'] && fsm2.confirmedSlotKey === '') {
-        pass('Slot-Persistence', 'Timeout: upload timeout tidak menandai confirmed_slot di NVS');
-    } else {
-        fail('Slot-Persistence', 'Timeout secara salah menandai confirmed_slot di NVS');
-    }
+    console.log('\n== AI Assistant ==');
+    const a = makeSandbox();
+    a.load('js/firebase-config.js');
+    a.load('js/growth.js');
+    a.load('js/ai-assistant.js');
+    const AI = a.win.AIAssistant;
 
-    // 3. HTTP 422: payload ditolak receiver tidak menandai confirmed_slot di NVS
-    const fsm3 = new MockESP32CamFSM();
-    const r3 = fsm3.simulateSlotTick('2026-11-03_07:20', () => ({ code: 422, body: '{"ok":false,"confirmed":false,"error":"FNV1a mismatch"}' }));
-    if (!r3.success && !fsm3.nvs['confirmed_slot'] && fsm3.confirmedSlotKey === '') {
-        pass('Slot-Persistence', 'HTTP 422: payload ditolak receiver tidak menandai confirmed_slot di NVS');
-    } else {
-        fail('Slot-Persistence', 'HTTP 422 secara salah menandai confirmed_slot di NVS');
-    }
+    await test('diagnosa: tanah kering + udara lembap + suhu hangat terdeteksi', () => {
+        const d = AI.diagnose({ tanah: 50, udara: 90, suhu: 26 });
+        eq(d.issues.length, 3);
+        eq(AI.diagnose(null), null);
+    });
 
-    // 4. Respons tidak valid (HTTP 200 tanpa ok:true & confirmed:true tidak dianggap sukses)
-    const fsm4 = new MockESP32CamFSM();
-    const r4 = fsm4.simulateSlotTick('2026-11-03_07:30', () => ({ code: 200, body: '{"ok":false,"confirmed":false}' }));
-    const r4b = fsm4.simulateSlotTick('2026-11-03_07:30', () => ({ code: 200, body: '<html>Gateway Error</html>' }));
-    if (!r4.success && !r4b.success && !fsm4.nvs['confirmed_slot'] && hasStrictConfirmedCheck) {
-        pass('Slot-Persistence', 'Respons tidak valid: HTTP 200 tanpa ok:true & confirmed:true ditolak dan tidak disimpan ke NVS');
-    } else {
-        fail('Slot-Persistence', 'HTTP 200 palsu/tanpa confirmed token secara salah dianggap sukses');
-    }
+    await test('prediksi belum tersedia dijawab jujur (termasuk pertanyaan dengan kata daun)', async () => {
+        const r = await AI.query('Prediksi lebar daun 4 hari ke depan', { forecast: null, leaf: { width: 120, cls: null } });
+        assert(/minimal 8 hari/.test(r), 'seharusnya menjawab status prediksi LSTM, bukan lebar daun: ' + r);
+    });
 
-    // 5. Sukses: HTTP 200 + ok:true + confirmed:true menyimpan confirmed_slot ke NVS
-    const fsm5 = new MockESP32CamFSM();
-    const r5 = fsm5.simulateSlotTick('2026-11-03_07:40', () => ({ code: 200, body: '{"ok":true,"confirmed":true,"image_id":"img_01"}' }));
-    if (r5.success && fsm5.nvs['confirmed_slot'] === '2026-11-03_07:40' && savesConfirmedOnlyOnSuccess) {
-        pass('Slot-Persistence', 'Sukses: HTTP 200 + ok:true + confirmed:true berhasil menyimpan confirmed_slot ke NVS');
-    } else {
-        fail('Slot-Persistence', 'Sukses upload gagal menyimpan confirmed_slot ke NVS');
-    }
+    await test('pertanyaan tipburn tepi daun tidak salah masuk ke intent lebar daun', async () => {
+        const r = await AI.query('Tipburn tepi daun', { sensor: { tanah: 70, udara: 70, suhu: 22 } });
+        assert(/Tipburn.*ujung daun muda/i.test(r), 'seharusnya menjawab tipburn: ' + r);
+    });
 
-    // 6. Reboot setelah sukses: mencegah upload ganda untuk confirmed_slot & slot berikutnya tidak terhalang
-    fsm5.reboot();
-    const r6_dup = fsm5.simulateSlotTick('2026-11-03_07:40', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
-    const r6_next = fsm5.simulateSlotTick('2026-11-03_07:50', () => ({ code: 200, body: '{"ok":true,"confirmed":true}' }));
-    if (r6_dup.skipped && r6_dup.reason === 'ALREADY_CONFIRMED' && r6_next.success && fsm5.nvs['confirmed_slot'] === '2026-11-03_07:50') {
-        pass('Slot-Persistence', 'Reboot setelah sukses: mencegah upload ganda untuk confirmed_slot & slot berikutnya tidak terhalang');
-    } else {
-        fail('Slot-Persistence', 'Reboot setelah sukses gagal mencegah upload ganda atau menghalangi slot berikutnya');
-    }
+    await test('jawaban memakai prediksi LSTM bila ada', async () => {
+        const fc = { ok: true, forecast: [{ width: 150, stage: 1 }, { width: 155, stage: 1 }, { width: 160, stage: 2 }, { width: 164, stage: 2 }] };
+        const r = await AI.query('prediksi besok', { forecast: fc });
+        assert(r.includes('150.0 px') && r.includes('Siap Panen'));
+    });
 
-} catch (e) {
-    fail('Slot-Persistence', 'Unexpected error in Suite 24', e.message);
-}
+    await test('desain & responsivitas CSS memenuhi standar Linear/Stripe dark palette', () => {
+        const css = read('css/app.css');
+        assert(css.includes('--bg: #090d16'), 'bg harus #090d16');
+        assert(css.includes('--card: #111827'), 'card harus #111827');
+        assert(css.includes('--accent: #10b981'), 'accent harus #10b981');
+        assert(css.includes('--rose: #f43f5e'), 'rose harus #f43f5e');
+        assert(css.includes('tabular-nums'), 'harus memakai tabular-nums');
+        assert(css.includes('@media (min-width: 900px)'), 'harus ada media query responsive desktop >=900px');
+    });
 
-// ------------------------------------------------------------------------------
-// TEST SUITE 25: ESP32-CAM AP+STA DUAL MODE, SETUP PORTAL & CONCURRENCY MUTEX
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [25] ESP32-CAM AP+STA Dual Mode, Setup Portal & Concurrency Mutex ---${C.reset}`);
-
-try {
-    const esp32CamInoPath = path.join(rootDir, 'firmware/esp32cam_kelompok5_autonomous/esp32cam_kelompok5_autonomous.ino');
-    const esp32CamIno = fs.existsSync(esp32CamInoPath) ? fs.readFileSync(esp32CamInoPath, 'utf8') : '';
-
-    // 1. Dual Mode AP+STA & Hotspot Configuration
-    const hasApStaMode = esp32CamIno.includes('WiFi.mode(WIFI_AP_STA)') &&
-        esp32CamIno.includes('WiFi.softAPConfig') &&
-        esp32CamIno.includes('WiFi.softAP(AP_SSID, AP_PASSWORD)') &&
-        esp32CamIno.includes('AP_SSID[] = "DAUN KERITING"') &&
-        esp32CamIno.includes('AP_IP(192, 168, 50, 1)');
-    if (hasApStaMode) {
-        pass('AP-STA-DualMode', 'ESP32-CAM configures simultaneous Access Point (DAUN KERITING @ 192.168.50.1) and Station mode', 'WIFI_AP_STA & softAPConfig active');
-    } else {
-        fail('AP-STA-DualMode', 'Missing or improper WIFI_AP_STA or softAPConfig configuration in firmware');
-    }
-
-    // 2. Setup Portal & Port 80 Routes
-    const hasPortalRoutes = esp32CamIno.includes('server.on("/", HTTP_GET, handleRoot)') &&
-        esp32CamIno.includes('server.on("/save", HTTP_POST, handleSave)') &&
-        esp32CamIno.includes('server.on("/capture", HTTP_GET, handleCapture)') &&
-        esp32CamIno.includes('server.on("/status", HTTP_GET, handleStatus)') &&
-        esp32CamIno.includes('server.on("/stream", HTTP_GET, handleStreamRedirect)');
-    if (hasPortalRoutes) {
-        pass('Setup-Portal-Routing', 'Port 80 WebServer defines full route map: /, /save, /capture, /status, and /stream redirect', 'Routes properly registered');
-    } else {
-        fail('Setup-Portal-Routing', 'Missing required Port 80 WebServer routes');
-    }
-
-    // 3. Captive Portal Detection & Fallback
-    const hasCaptiveRedirect = esp32CamIno.includes('192.168.50.1') &&
-        esp32CamIno.includes('server.sendHeader("Location", "http://192.168.50.1/")') &&
-        esp32CamIno.includes('server.send(302, "text/plain", "")');
-    if (hasCaptiveRedirect) {
-        pass('Captive-Portal-Redirection', 'Captive portal requests on AP IP automatically redirect to setup form (HTTP 302)', 'Location: http://192.168.50.1/');
-    } else {
-        fail('Captive-Portal-Redirection', 'Missing captive portal 302 redirection logic');
-    }
-
-    // 4. FreeRTOS Camera Mutex Protection
-    const hasCameraMutex = esp32CamIno.includes('SemaphoreHandle_t cameraMutex') &&
-        esp32CamIno.includes('xSemaphoreCreateMutex()') &&
-        esp32CamIno.includes('xSemaphoreTake(cameraMutex') &&
-        esp32CamIno.includes('xSemaphoreGive(cameraMutex');
-    if (hasCameraMutex) {
-        pass('Camera-Concurrency-Mutex', 'Hardware OV2640 DMA access is serialized with FreeRTOS mutex preventing stream vs capture race conditions', 'xSemaphoreTake/Give verified across all callers');
-    } else {
-        fail('Camera-Concurrency-Mutex', 'Missing FreeRTOS cameraMutex synchronization around esp_camera_fb_get');
-    }
-
-    // 5. Full-Byte Verification in Capture Delivery
-    const hasFullByteCheck = esp32CamIno.includes('client.write(fb->buf, fb->len)') &&
-        esp32CamIno.includes('written != expectedLen');
-    if (hasFullByteCheck) {
-        pass('JPEG-Full-Byte-Validation', 'Port 80 /capture validates byte delivery integrity against framebuffer length', 'written != expectedLen mismatch handled');
-    } else {
-        fail('JPEG-Full-Byte-Validation', 'Missing byte verification check during JPEG client delivery');
-    }
-
-    // 6. Extended Status JSON Schema
-    const hasExtendedStatus = esp32CamIno.includes('device') &&
-        esp32CamIno.includes('camera_ready') &&
-        esp32CamIno.includes('wifi_connected') &&
-        esp32CamIno.includes('ntp_synced') &&
-        esp32CamIno.includes('captured') &&
-        esp32CamIno.includes('uploaded') &&
-        esp32CamIno.includes('failed') &&
-        esp32CamIno.includes('hst_day') &&
-        esp32CamIno.includes('last_slot') &&
-        esp32CamIno.includes('confirmed_slot') &&
-        esp32CamIno.includes('attempted_slot') &&
-        esp32CamIno.includes('ap_ssid') &&
-        esp32CamIno.includes('ap_ip') &&
-        esp32CamIno.includes('sta_ip') &&
-        esp32CamIno.includes('rssi') &&
-        esp32CamIno.includes('stream_port') &&
-        esp32CamIno.includes('stream_endpoint');
-    if (hasExtendedStatus) {
-        pass('Status-JSON-Schema-Extended', 'Endpoint /status outputs comprehensive JSON retaining all telemetry keys and adding AP+STA network metrics', '100% backward and forward compatible');
-    } else {
-        fail('Status-JSON-Schema-Extended', 'Missing required keys in /status JSON response');
-    }
-
-} catch (e) {
-    fail('AP-STA-Audit', 'Unexpected error in Suite 25', e.message);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 26: VERCEL SERVERLESS FUNCTION PHASE 1 ADAPTER (/api/kelompok5/capture)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [26] Vercel Serverless Function Phase 1 Adapter (POST /api/kelompok5/capture) ---${C.reset}`);
-
-try {
-    const reqTxtPath = path.join(rootDir, 'requirements.txt');
-    const vercelJsonPath = path.join(rootDir, 'vercel.json');
-    const pyVersionPath = path.join(rootDir, '.python-version');
-    const captureApiPath = path.join(rootDir, 'api/kelompok5/capture.py');
-    const cvPipelinePath = path.join(rootDir, 'scripts/growth_cv_pipeline.py');
-
-    const reqTxt = fs.existsSync(reqTxtPath) ? fs.readFileSync(reqTxtPath, 'utf8') : '';
-    const vercelJson = fs.existsSync(vercelJsonPath) ? fs.readFileSync(vercelJsonPath, 'utf8') : '';
-    const pyVersion = fs.existsSync(pyVersionPath) ? fs.readFileSync(pyVersionPath, 'utf8').trim() : '';
-    const captureApi = fs.existsSync(captureApiPath) ? fs.readFileSync(captureApiPath, 'utf8') : '';
-    const cvPipeline = fs.existsSync(cvPipelinePath) ? fs.readFileSync(cvPipelinePath, 'utf8') : '';
-
-    // 1. requirements.txt, vercel.json, .python-version & Vercel Python Handler Contract
-    const hasRequirements = reqTxt.includes('numpy') && reqTxt.includes('Pillow');
-    const hasVercelCfg = vercelJson.includes('api/kelompok5/capture.py') &&
-        vercelJson.includes('maxDuration') &&
-        vercelJson.includes('excludeFiles') &&
-        pyVersion === '3.12';
-    const hasVercelHandler = captureApi.includes('class handler(BaseHTTPRequestHandler):') &&
-        !captureApi.includes('import ThreadingHTTPServer') &&
-        !captureApi.includes('ThreadingHTTPServer(');
-    if (hasRequirements && hasVercelCfg && hasVercelHandler) {
-        pass('Vercel-Serverless-Entrypoint', 'requirements.txt, vercel.json, .python-version (3.12), and stateless class handler(BaseHTTPRequestHandler) verified without ThreadingHTTPServer');
-    } else {
-        fail('Vercel-Serverless-Entrypoint', 'Missing requirements.txt, vercel.json, .python-version, or invalid handler(BaseHTTPRequestHandler) in api/kelompok5/capture.py');
-    }
-
-    // 2. ESP32-CAM Header, Calendar/Schedule Window, Pixel Bounds & 4.5MB Limit
-    const hasEsp32Contract = captureApi.includes('MAX_PAYLOAD_BYTES = 4_500_000') &&
-        captureApi.includes('MAX_IMAGE_PIXELS') &&
-        captureApi.includes('parse_and_validate_slot_key') &&
-        captureApi.includes('X-Slot-Key') &&
-        captureApi.includes('X-Captured-At') &&
-        captureApi.includes('X-HST-Day') &&
-        captureApi.includes('X-File-Size') &&
-        captureApi.includes('X-Checksum-FNV1A') &&
-        captureApi.includes('2166136261') &&
-        captureApi.includes('16777619');
-    if (hasEsp32Contract) {
-        pass('Vercel-ESP32-Contract', 'Serverless adapter enforces mandatory ESP32-CAM headers, calendar/WIB window, pixel bounds (<=1600x1200), FNV-1a checksum, and 4.5MB limit');
-    } else {
-        fail('Vercel-ESP32-Contract', 'Missing ESP32-CAM header/calendar/pixel validations or 4.5MB limit in api/kelompok5/capture.py');
-    }
-
-    // 3. Ephemeral /tmp CV Storage & Idempotent Vercel Blob Integration (x-allow-overwrite + delete_blobs)
-    const hasTmpAndBlob = cvPipeline.includes('use_tmp_only') &&
-        cvPipeline.includes('tempfile.TemporaryDirectory') &&
-        !cvPipeline.includes('blob://growth_images/') &&
-        captureApi.includes('VercelBlobStorage') &&
-        captureApi.includes('BLOB_READ_WRITE_TOKEN') &&
-        captureApi.includes('"x-allow-overwrite": "1"') &&
-        captureApi.includes('def delete_blobs') &&
-        captureApi.includes('use_tmp_only=True');
-    if (hasTmpAndBlob) {
-        pass('Vercel-Blob-And-Tmp-CV', 'CV pipeline uses ephemeral /tmp scratch directory and uploads idempotently to Vercel Blob (x-allow-overwrite: 1) with fenced partial cleanup');
-    } else {
-        fail('Vercel-Blob-And-Tmp-CV', 'Missing /tmp ephemeral mode, x-allow-overwrite: 1, or delete_blobs in VercelBlobStorage');
-    }
-
-    // 4. Firebase RTDB Mandatory ETag CAS, Owner ID + Monotonic Fencing Token & Fenced Rollback
-    const hasAtomicRtdb = captureApi.includes('FirebaseRTDBStore') &&
-        captureApi.includes('FIREBASE_RTDB_URL') &&
-        captureApi.includes('X-Firebase-ETag') &&
-        captureApi.includes('If-Match') &&
-        captureApi.includes('MissingETagError') &&
-        captureApi.includes('StaleLockOwnerError') &&
-        captureApi.includes('owner_id') &&
-        captureApi.includes('fence_token') &&
-        captureApi.includes('claim_slot') &&
-        captureApi.includes('commit_slot_and_metadata') &&
-        captureApi.includes('release_failed_slot');
-    if (hasAtomicRtdb) {
-        pass('Firebase-RTDB-Atomic-Slot', 'Firebase RTDB mandatory ETag CAS, owner_id + fence_token verification, and fenced rollback recovery verified');
-    } else {
-        fail('Firebase-RTDB-Atomic-Slot', 'Missing Firebase RTDB mandatory ETag CAS, fencing token, or fenced rollback');
-    }
-
-    // 5. Fail-Closed CAPTURE_SHARED_TOKEN Authentication (503 when empty, 401 when invalid)
-    const hasSharedTokenAuth = captureApi.includes('CAPTURE_SHARED_TOKEN') &&
-        captureApi.includes('hmac.compare_digest') &&
-        captureApi.includes('X-Capture-Token') &&
-        captureApi.includes('503') &&
-        captureApi.includes('401');
-    if (hasSharedTokenAuth) {
-        pass('Serverless-Capture-Auth', 'Fail-closed endpoint authentication via CAPTURE_SHARED_TOKEN (503 when unconfigured, 401 when invalid) with hmac.compare_digest verified');
-    } else {
-        fail('Serverless-Capture-Auth', 'Missing fail-closed CAPTURE_SHARED_TOKEN authentication in api/kelompok5/capture.py');
-    }
-} catch (e) {
-    fail('Vercel-Serverless-Audit', 'Unexpected error in Suite 26', e.message);
-}
-
-// ------------------------------------------------------------------------------
-// TEST SUITE 27: MOBILE CAMERA FALLBACK, FILE VALIDATION, API ERRORS & CORS/MIXED-CONTENT
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [27] Mobile Camera Upload Fallback, File Validation, API Failures & CORS/Mixed Content ---${C.reset}`);
-
-(async () => {
-    try {
-        const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
-        const dashJs = fs.readFileSync(path.join(rootDir, 'js/dashboard.js'), 'utf8');
-        const uploader = sandbox.window.ManualCaptureUploader;
-
-        // 1. HTML Contract: crossorigin="anonymous" on #camimg + <input type="file" accept="image/*" capture="environment">
-        const hasCrossOriginImg = /<img[^>]+id="camimg"[^>]+crossorigin="anonymous"/i.test(indexHtml);
-        const hasMobileInput = /<input[^>]+type="file"[^>]+id="camMobileInput"[^>]+accept="image\/\*"[^>]+capture="environment"/i.test(indexHtml);
-        const hasFallbackPanel = indexHtml.includes('id="manualUploadPanel"') &&
-            indexHtml.includes('id="manualUploadPreviewImg"') &&
-            indexHtml.includes('id="manualCaptureToken"') &&
-            indexHtml.includes('id="manualCaptureHst"') &&
-            indexHtml.includes('id="btnManualUploadSubmit"') &&
-            indexHtml.includes('id="manualUploadStatus"');
-        const hasLocalStreamPreserved = dashJs.includes('corsFallbackTried') &&
-            dashJs.includes("removeAttribute('crossorigin')") &&
-            dashJs.includes('/capture?t=');
-        if (hasCrossOriginImg && hasMobileInput && hasFallbackPanel && hasLocalStreamPreserved) {
-            pass('Camera-HTML-And-Stream-Fallback', 'index.html & dashboard.js define crossorigin="anonymous" with MJPEG fallback, HTTP /capture fallback, and <input type="file" accept="image/*" capture="environment">');
-        } else {
-            fail('Camera-HTML-And-Stream-Fallback', 'Missing crossorigin="anonymous", mobile capture input, or stream fallback logic');
+    console.log('\n== Integrasi Runtime DOM & Navigasi 4 Menu (app.js) ==');
+    await test('simulasi penuh app.js: navigasi 4 menu, validasi inline kamera, CNN Belum Dilatih, & isolasi prediksi LSTM', async () => {
+        const elements = {};
+        const navLinks = [];
+        function makeEl(id, tag = 'div', dataset = {}) {
+            let _text = '';
+            const el = {
+                id,
+                tagName: tag.toUpperCase(),
+                get textContent() { return _text; },
+                set textContent(v) { _text = String(v ?? ''); this.children = []; },
+                innerHTML: '',
+                value: '',
+                hidden: false,
+                disabled: false,
+                title: '',
+                className: '',
+                clientWidth: 640,
+                style: {},
+                dataset: Object.assign({}, dataset),
+                children: [],
+                attrs: {},
+                listeners: {},
+                classList: {
+                    _set: new Set(),
+                    toggle(c, force) {
+                        const on = force !== undefined ? Boolean(force) : !this._set.has(c);
+                        if (on) this._set.add(c); else this._set.delete(c);
+                    },
+                    contains(c) { return this._set.has(c); }
+                },
+                setAttribute(k, v) { this.attrs[k] = String(v); },
+                removeAttribute(k) { delete this.attrs[k]; },
+                appendChild(ch) { this.children.push(ch); return ch; },
+                addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+                dispatch(ev, payload) { (this.listeners[ev] || []).forEach(fn => fn(payload || { target: this, preventDefault() {} })); },
+                querySelector(sel) {
+                    if (sel === '.hit' || sel === '.cross' || sel === 'svg') return makeEl(sel);
+                    return null;
+                },
+                querySelectorAll(sel) {
+                    if (sel === 'button') return this.children;
+                    return [];
+                },
+                closest(sel) { return this._closest || null; }
+            };
+            if (id) elements[id] = el;
+            return el;
         }
 
-        // 2. File Validation (MIME type, empty/small <100B, oversized >4.5MB, valid JPEG/PNG/WebP)
-        const vEmpty = uploader.validateFile(null);
-        const vBadMime1 = uploader.validateFile({ name: 'exploit.svg', type: 'image/svg+xml', size: 4096 });
-        const vBadMime2 = uploader.validateFile({ name: 'doc.pdf', type: 'application/pdf', size: 4096 });
-        const vTooSmall = uploader.validateFile({ name: 'tiny.jpg', type: 'image/jpeg', size: 42 });
-        const vTooLarge = uploader.validateFile({ name: 'huge.jpg', type: 'image/jpeg', size: 4500001 });
-        const vValidJpeg = uploader.validateFile({ name: 'leaf.jpg', type: 'image/jpeg', size: 125000 });
-        const vValidPng = uploader.validateFile({ name: 'leaf.png', type: 'image/png', size: 250000 });
-        const vValidWebp = uploader.validateFile({ name: 'leaf.webp', type: 'image/webp', size: 180000 });
-        if (!vEmpty.valid && vEmpty.code === 'EMPTY_FILE' &&
-            !vBadMime1.valid && vBadMime1.code === 'INVALID_MIME' &&
-            !vBadMime2.valid && vBadMime2.code === 'INVALID_MIME' &&
-            !vTooSmall.valid && vTooSmall.code === 'FILE_TOO_SMALL' &&
-            !vTooLarge.valid && vTooLarge.code === 'FILE_TOO_LARGE' &&
-            vValidJpeg.valid && vValidPng.valid && vValidWebp.valid) {
-            pass('Manual-File-Validation', 'Rejects null, SVG/PDF MIME types, <100B, and >4.5MB files while accepting valid JPEG/PNG/WebP');
-        } else {
-            fail('Manual-File-Validation', 'File validation failed on MIME or size boundaries');
-        }
-
-        // 3. Dimension Bounds Validation (64x64 .. 1600x1200)
-        const dSmall = uploader.validateDimensions(32, 32);
-        const dLarge = uploader.validateDimensions(1920, 1080);
-        const dOk = uploader.validateDimensions(800, 600);
-        if (!dSmall.valid && !dLarge.valid && dOk.valid) {
-            pass('Manual-Dimension-Validation', 'Enforces 64x64 .. 1600x1200 pixel bounds before CV upload');
-        } else {
-            fail('Manual-Dimension-Validation', 'Pixel dimension validation failed');
-        }
-
-        // 4. 32-bit FNV-1a Checksum Parity & WIB Slot Window Calculation
-        const fnvEmpty = uploader.computeFnv1aHex(new Uint8Array([]));
-        const fnvFoobar = uploader.computeFnv1aHex(new Uint8Array([102, 111, 111, 98, 97, 114])); // "foobar" -> bf9cf968
-        // 2026-11-03 08:23:00 WIB = 2026-11-03 01:23:00 UTC
-        const tsValidWib = Date.UTC(2026, 10, 3, 1, 23, 0);
-        // 2026-11-03 21:15:00 WIB = 2026-11-03 14:15:00 UTC
-        const tsOutsideWib = Date.UTC(2026, 10, 3, 14, 15, 0);
-        const slotValid = uploader.computeWibSlotMeta(tsValidWib);
-        const slotOutside = uploader.computeWibSlotMeta(tsOutsideWib);
-        if (fnvEmpty === '811c9dc5' &&
-            fnvFoobar === 'bf9cf968' &&
-            slotValid.slotKey === '2026-11-03_08:20' &&
-            slotValid.inScheduleWindow === true &&
-            slotOutside.slotKey === '2026-11-03_21:10' &&
-            slotOutside.inScheduleWindow === false) {
-            pass('Manual-FNV1a-And-WIB-Slot', 'FNV-1a matches 32-bit reference vectors (bf9cf968) and WIB 10-min slot calculation accurately detects 07:00–16:50 window');
-        } else {
-            fail('Manual-FNV1a-And-WIB-Slot', `Unexpected FNV-1a (${fnvFoobar}) or slot (${slotValid.slotKey})`);
-        }
-
-        // 5. Camera Failure Diagnostics (HTTPS Mixed Content & PNA vs Tainted Canvas vs Offline)
-        const diagHttps = uploader.diagnoseCameraFailure({
-            protocol: 'https:',
-            camHost: '192.168.1.23',
-            error: new Error('Failed to fetch'),
-            hasImageFeed: false
+        // Buat seluruh elemen ber-ID dari index.html
+        const htmlIds = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+        htmlIds.forEach(id => makeEl(id));
+        ['tanah', 'udara', 'suhu', 'pompa'].forEach(v => {
+            const b = makeEl('', 'button', { v });
+            b._closest = b;
+            elements.segMetric.children.push(b);
         });
-        const taintErr = new Error('The canvas has been tainted by cross-origin data');
-        taintErr.name = 'SecurityError';
-        const diagTaint = uploader.diagnoseCameraFailure({
-            protocol: 'http:',
-            camHost: '192.168.1.23',
-            error: taintErr,
-            hasImageFeed: true
+        ['0', '60', '300', '900'].forEach(v => {
+            const b = makeEl('', 'button', { v });
+            b._closest = b;
+            elements.segWindow.children.push(b);
         });
-        const diagNoFeed = uploader.diagnoseCameraFailure({
-            protocol: 'http:',
-            camHost: '192.168.1.23',
-            error: null,
-            hasImageFeed: false
+        ['stream', 'snap'].forEach(v => {
+            const b = makeEl('', 'button', { v });
+            b._closest = b;
+            elements.segCam.children.push(b);
         });
-        if (diagHttps.reason === 'HTTPS_MIXED_CONTENT_AND_PNA' &&
-            diagHttps.detail.includes('Mixed Content') &&
-            diagHttps.detail.includes('Private Network Access') &&
-            diagTaint.reason === 'CANVAS_CORS_TAINTED' &&
-            diagNoFeed.reason === 'NO_ACTIVE_STREAM') {
-            pass('Camera-Fallback-Diagnostics', 'Accurately distinguishes HTTPS Mixed Content + Private Network Access, CORS canvas tainting, and inactive local stream');
-        } else {
-            fail('Camera-Fallback-Diagnostics', 'Camera diagnostic classification mismatch');
-        }
-
-        // 6. Manual Upload Client & API Failure Handling (400 / 401 / 409 / 422 / 503 / Network Error) + Success Ingestion
-        const sampleJpeg = new Uint8Array(256);
-        sampleJpeg[0] = 0xff;
-        sampleJpeg[1] = 0xd8;
-        sampleJpeg[2] = 0xff;
-        for (let i = 3; i < sampleJpeg.length; i++) sampleJpeg[i] = (i * 17) & 0xff;
-
-        // 6a. Missing token rejected before network call
-        const resNoToken = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 12,
-            token: '   ',
-            timestampMs: tsValidWib
+        ['dashboard', 'kamera', 'prediksi', 'ai'].forEach(page => {
+            const a = makeEl('', 'a', { page });
+            navLinks.push(a);
         });
-        // 6b. Invalid HST (45 > 42) rejected
-        const resBadHst = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 45,
-            token: 'secret-tok',
-            timestampMs: tsValidWib
-        });
-        // 6c. Server HTTP 401 Unauthorized
-        const res401 = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 12,
-            token: 'wrong-token',
-            timestampMs: tsValidWib,
-            fetchImpl: async () => ({
-                status: 401,
-                json: async () => ({ ok: false, confirmed: false, error: 'Unauthorized: invalid capture token' })
-            })
-        });
-        // 6d. Server HTTP 422 Outside Schedule Window
-        const res422 = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 12,
-            token: 'valid-token',
-            timestampMs: tsOutsideWib,
-            fetchImpl: async () => ({
-                status: 422,
-                json: async () => ({ ok: false, confirmed: false, error: 'Slot 2026-11-03_21:10 is outside allowed schedule window (07:00-16:50 WIB)' })
-            })
-        });
-        // 6e. Server HTTP 409 Slot In Progress
-        const res409 = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 12,
-            token: 'valid-token',
-            timestampMs: tsValidWib,
-            fetchImpl: async () => ({
-                status: 409,
-                json: async () => ({ ok: false, confirmed: false, error: 'Slot 2026-11-03_08:20 is currently being processed by another instance' })
-            })
-        });
-        // 6f. Network failure
-        const resNetErr = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 12,
-            token: 'valid-token',
-            timestampMs: tsValidWib,
-            fetchImpl: async () => { throw new Error('ECONNRESET'); }
-        });
+        elements.galFilter.value = 'all';
 
-        // 6g. Successful HTTP 200 upload verifies all headers sent and updates GrowthStore
-        let capturedReq = null;
-        const res200 = await uploader.uploadJpegToVercel({
-            jpegBytes: sampleJpeg,
-            width: 640,
-            height: 480,
-            hstDay: 14,
-            token: 'valid-prod-token',
-            timestampMs: tsValidWib,
-            fetchImpl: async (url, opts) => {
-                capturedReq = { url, opts };
-                return {
-                    status: 200,
-                    json: async () => ({
-                        ok: true,
-                        confirmed: true,
-                        kelompok: 'Kelompok 5',
-                        slot_key: '2026-11-03_08:20',
-                        image_id: 'img_20261103_0820_manual',
-                        file_size: sampleJpeg.length,
-                        fnv1a: uploader.computeFnv1aHex(sampleJpeg),
-                        checksum_fnv1a: uploader.computeFnv1aHex(sampleJpeg),
-                        quality_status: 'VALID',
-                        quality_detail: 'Kontur daun selada terdeteksi normal',
-                        leaf_width_px: 148.5,
-                        leaf_area_px: 11420,
-                        hst_day: 14,
-                        captured_at: tsValidWib,
-                        time_wib: '2026-11-03 08:23:00 WIB',
-                        capture_source: 'mobile_manual_fallback',
-                        image_url: 'https://blob.vercel-storage.com/orig.jpg',
-                        mask_url: 'https://blob.vercel-storage.com/mask.png',
-                        overlay_url: 'https://blob.vercel-storage.com/overlay.jpg'
-                    })
-                };
-            }
-        });
+        const domWin = makeSandbox();
+        const w = domWin.win;
+        w.location = { hash: '#dashboard', protocol: 'http:' };
+        w.scrollTo = () => {};
+        w.addEventListener = (ev, fn) => { (w._listeners = w._listeners || {})[ev] = fn; };
+        w.document = {
+            readyState: 'complete',
+            title: '',
+            body: makeEl('body'),
+            createElement: tag => makeEl('', tag),
+            querySelector: sel => (sel.startsWith('#') ? elements[sel.slice(1)] || null : null),
+            querySelectorAll: sel => (sel === '.nav-link' ? navLinks : [])
+        };
+        global.document = w.document;
+        global.location = w.location;
+        vm.runInContext('var document = window.document; var location = window.location; var scrollTo = window.scrollTo; var addEventListener = window.addEventListener;', w);
 
-        const hdrsSent = capturedReq ? capturedReq.opts.headers : {};
-        const hasAllRequiredHeaders = hdrsSent['Content-Type'] === 'image/jpeg' &&
-            hdrsSent['X-Kelompok'] === 'Kelompok 5' &&
-            hdrsSent['X-Slot-Key'] === '2026-11-03_08:20' &&
-            hdrsSent['X-Captured-At'] === String(tsValidWib) &&
-            hdrsSent['X-HST-Day'] === '14' &&
-            hdrsSent['X-File-Size'] === String(sampleJpeg.length) &&
-            hdrsSent['X-Checksum-FNV1A'] === uploader.computeFnv1aHex(sampleJpeg) &&
-            hdrsSent['X-Capture-Token'] === 'valid-prod-token' &&
-            hdrsSent['X-Capture-Source'] === 'mobile_manual_fallback';
+        domWin.load('js/firebase-config.js');
+        domWin.load('js/dataset.js');
+        domWin.load('js/growth.js');
+        domWin.load('js/forecast.js');
+        domWin.load('js/ai-assistant.js');
+        // Nonaktifkan polling jaringan latar belakang selama tes DOM
+        w.FirebaseEdgeClient.start = () => {};
+        w.GrowthStore.start = () => {};
+        domWin.load('js/app.js');
 
-        const ingestedRecord = sandbox.window.GrowthStore.records.find(r => r.image_id === 'img_20261103_0820_manual');
+        // 1. Verifikasi halaman awal Dashboard
+        eq(elements['p-dashboard'].hidden, false);
+        eq(elements['p-kamera'].hidden, true);
+        eq(elements['p-prediksi'].hidden, true);
+        eq(elements['p-ai'].hidden, true);
 
-        if (!resNoToken.ok && resNoToken.status === 400 &&
-            !resBadHst.ok && resBadHst.status === 400 &&
-            !res401.ok && res401.status === 401 &&
-            !res422.ok && res422.status === 422 &&
-            !res409.ok && res409.status === 409 &&
-            !resNetErr.ok && resNetErr.status === 0 &&
-            res200.ok && res200.status === 200 &&
-            hasAllRequiredHeaders &&
-            ingestedRecord && ingestedRecord.leaf_width_px === 148.5 && ingestedRecord.leaf_area_px === 11420) {
-            pass('Manual-Upload-API-And-Ingestion', 'Handles 400/401/409/422/network errors cleanly and sends authenticated FNV-1a/slot headers to /api/kelompok5/capture, ingesting CV metrics into GrowthStore');
-        } else {
-            fail('Manual-Upload-API-And-Ingestion', 'Failed API error handling or header/GrowthStore ingestion check');
-        }
-    } catch (e) {
-        fail('Manual-Camera-Fallback-Suite', 'Unexpected error in Suite 27', e.message);
-    }
+        // Masukkan data sensor & data lebar daun nyata (tanpa klasifikasi CNN)
+        const now = Date.now();
+        w.DatasetStore.setRecords([
+            { t: now - 10000, tanah: 72, udara: 68, suhu: 22.5, relayActual: false, source: 'live' }
+        ], 'live');
+        w.GrowthStore.ingestFromRTDB([rec(0, 118.4), rec(1, 124.6)]);
 
-// ------------------------------------------------------------------------------
-// TEST SUITE 28: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [28] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
+        eq(elements.vSoil.textContent, '72');
+        eq(elements.vLeaf.textContent, '124.6');
+        eq(elements.bLeaf.textContent, 'CNN: BELUM ADA MODEL');
+        eq(elements.teleStatBar.children.length, 4);
+        eq(elements.leafStatBar.children.length, 4);
 
-notTested(
-    'Hardware-IoT',
-    'ESP32 GPIO 26 Relay Physical Switching',
-    'Requires connected ESP32 microcontroller with 5V active-LOW relay module and multimeter/load verification'
-);
+        // 2. Navigasi ke Kamera & CNN
+        w.location.hash = '#kamera';
+        w._listeners.hashchange();
+        eq(elements['p-kamera'].hidden, false);
+        eq(elements['p-dashboard'].hidden, true);
+        eq(elements.cnnBadge.textContent, 'BELUM ADA MODEL');
+        eq(elements.classList.children.length, 4);
+        eq(elements.cnnSupportMeta.children.length, 4);
+        eq(elements.cnnModelMeta.children.length, 4);
 
-notTested(
-    'Hardware-IoT',
-    'Capacitive Soil Moisture Sensor Analog Calibration (HW-390 / v1.2)',
-    'Requires physical immersion in dry air (ADC ~3200) and saturated substrate (ADC ~1400) for exact calibration curve'
-);
+        // Uji validasi inline IP kamera tidak valid -> valid
+        elements.camIp.value = 'http://bad_url/evil';
+        elements.camGo.dispatch('click');
+        eq(elements.camError.hidden, false);
+        assert(elements.camIp.classList.contains('is-invalid'), 'input kamera harus ditandai is-invalid');
 
-notTested(
-    'Hardware-IoT',
-    'ESP32-CAM OV2640 Real-time MJPEG Frame Capture',
-    'Requires physical ESP32-CAM on local Wi-Fi subnet running video stream web server on port 81'
-);
+        elements.camIp.value = '192.168.1.50:8080';
+        elements.camIp.dispatch('input');
+        eq(elements.camError.hidden, true);
+        assert(!elements.camIp.classList.contains('is-invalid'), 'is-invalid harus bersih saat input diubah');
+        elements.camGo.dispatch('click');
+        assert(elements.camImg.src.startsWith('http://192.168.1.50:8080/stream?t='), 'port kustom kamera harus dipertahankan: ' + elements.camImg.src);
 
-notTested(
-    'Production-Cloud',
-    'Firebase RTDB Asia-Southeast1 / Emulator Live ETag CAS & Write Access',
-    'Requires live FIREBASE_RTDB_URL (Firebase Emulator or staging RTDB) and authenticated credentials (run tests/test_vercel_cloud_integration.py)'
-);
+        // 3. Navigasi ke Prediksi LSTM (data < 8 hari -> menunggu data, tombol retrain nonaktif)
+        w.location.hash = '#prediksi';
+        w._listeners.hashchange();
+        eq(elements['p-prediksi'].hidden, false);
+        eq(elements.fcBadge.textContent, 'Menunggu data');
+        eq(elements.fcRetrain.disabled, true);
 
-notTested(
-    'Production-Cloud',
-    'Vercel Blob Staging Store Live PUT Overwrite & Delete API',
-    'Requires live BLOB_READ_WRITE_TOKEN staging store credentials (run tests/test_vercel_cloud_integration.py)'
-);
+        // 4. Navigasi ke AI Assistant (paling bawah)
+        w.location.hash = '#ai';
+        w._listeners.hashchange();
+        eq(elements['p-ai'].hidden, false);
+        eq(elements['p-prediksi'].hidden, true);
+    });
 
-// ------------------------------------------------------------------------------
-// SUMMARY REPORT
-// ------------------------------------------------------------------------------
-console.log(`\n${C.bold}${C.cyan}================================================================${C.reset}`);
-console.log(`${C.bold} TEST SUITE EXECUTION SUMMARY${C.reset}`);
-console.log(`${C.bold}${C.cyan}================================================================${C.reset}`);
-console.log(`  Total Executed Tests : ${results.pass + results.fail + results.notTested}`);
-console.log(`  ${C.green}Passed (Verified)    : ${results.pass}${C.reset}`);
-console.log(`  ${C.red}Failed               : ${results.fail}${C.reset}`);
-console.log(`  ${C.yellow}Not Tested (Hardware): ${results.notTested}${C.reset}`);
-console.log(`${C.bold}${C.cyan}================================================================${C.reset}\n`);
-
-if (results.fail > 0) {
-    console.error(`${C.red}TEST SUITE FAILED WITH ${results.fail} ERRORS.${C.reset}`);
-    process.exit(1);
-} else {
-    console.log(`${C.green}ALL TESTABLE SOFTWARE, SECURITY & INTEGRITY SPECS PASSED!${C.reset}`);
-    process.exit(0);
-}
+    console.log(`\n${pass} lulus, ${fail} gagal\n`);
+    process.exit(fail ? 1 : 0);
 })();

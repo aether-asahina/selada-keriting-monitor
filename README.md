@@ -55,57 +55,36 @@ flowchart TD
         RTDB --- RULES
     end
 
-    subgraph Client_App ["Dashboard Web Profesional (11 Modul Halaman)"]
+    subgraph Client_App ["Dashboard Web Profesional (4 Modul Halaman)"]
         SEC["Security Layer<br/>(XSS Allowlist, CSV Defense CWE-1236, Host Sanitize)"]
         ROUTER["Data Demux & Store<br/>(Live RTDB / Offline-Cache / Zero-Dummy)"]
-        GROWTH["Leaf Growth Manager<br/>(Sinkronisasi Galeri & Metrik Kanopi)"]
-        SCADA["SCADA Controller<br/>(Pump Command Setpoint vs Relay Feedback)"]
-        DSS["Sistem Pakar Agronomi<br/>(Tetens VPD & Physiological GDD)"]
-        UI["11 Modul Tampilan Navigasi<br/>(Dashboard, Sensor, Kamera, Pertumbuhan Daun, Riwayat, Analisis Tanaman, AI Assistant, Otomasi, Peringatan, Pengaturan, Panduan)"]
+        GROWTH["GrowthStore & CNN 4-Kelas<br/>(Lebar Daun & Status Belum Dilatih)"]
+        LSTM["Forecast LSTM 4 Hari<br/>(Histori Observasi Nyata)"]
+        AI["AI Assistant Agronomi<br/>(Tanya Jawab & Diagnosa Real-Time)"]
+        UI["4 Modul Tampilan Navigasi<br/>(Dashboard, Kamera & CNN, Prediksi LSTM, AI Assistant)"]
         
         RTDB -->|Polling Mutex / Fetch Lock| ROUTER
-        STORE -->|JSON Fetch & Static Asset| GROWTH
+        STORE -->|JSON Fetch & RTDB Sync| GROWTH
         CAM -.->|Local Subnet MJPEG| UI
         ROUTER --> SEC
-        SEC --> SCADA
-        SEC --> DSS
+        GROWTH --> LSTM
         GROWTH --> UI
-        SCADA --> UI
-        DSS --> UI
+        LSTM --> UI
+        AI --> UI
     end
 ```
 
 ---
 
-## 2. Tiga Pekerjaan Utama yang Diimplementasikan
+## 2. Arsitektur Frontend & 4 Menu Utama
 
-### (1) Redesign Dashboard: Professional Agricultural Monitoring (Kelompok 5)
-Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian modern premium:
-- **Palet Warna**: Canvas `#090d16`, panel/surface `#111827`, border tipis `1px solid rgba(255,255,255,0.08)`, aksen biru Linear `#3b82f6`, indikator hijau `#10b981` (kondisi optimal), kuning `#f59e0b` (peringatan), merah `#ef4444` (kritis).
-- **Sidebar Navigasi Proporsional (11 Modul Fungsional)**:
-  1. **Dashboard (`#ringkasan`)**: Pusat monitoring utama dengan ringkasan status perangkat/kamera/koneksi kamera/unggah Wi-Fi/HST, 4 KPI kartu fisik utama, grafik interaktif lebar (Suhu Udara, Kelembapan Udara, Kelembapan Tanah, Riwayat Status Pompa/Relay, serta Progres Pertumbuhan Tanaman Citra Aktual), Live Camera IP lokal, Galeri Capture Aktual, Log Telemetri, dan Evaluasi Pakar.
-  2. **Sensor (`#sensor`)**: Detail telemetri sensor tanah, suhu, udara, zona histeresis, dan korelasi scatter plot dalam grid 2 kolom seimbang.
-  3. **Kamera (`#kamera`)**: Live streaming ESP32-CAM (`http://<IP>:81/stream`), status kamera & upload Wi-Fi tervalidasi FNV-1a, snapshot manual, dan galeri sesi.
-  4. **Pertumbuhan Daun (`#pertumbuhan-daun`)**: Dasbor kampanye 42 hari, progres target 1.600 gambar, countdown 10 menit, 4 grafik trajektori kanopi, galeri filterable, dan modal inspeksi segmentasi side-by-side.
-  5. **Riwayat (`#riwayat`)**: Log telemetri per pembacaan / per menit dengan paginasi, pengurutan kolom, dan unduh CSV aman CWE-1236.
-  6. **Analisis Tanaman (`#analisis-tanaman`)**: DSS fisiologi tanaman dengan dekomposisi Tetens VPD dan model termal GDD ($T_{\text{base}} = 4.0^\circ\text{C}$).
-  7. **AI Assistant (`#ai-assistant`)**: Halaman khusus asisten percakapan cerdas dengan auto-diagnosis real-time dan chip topik konsultasi cepat.
-  8. **Otomasi (`#otomasi`)**: Pengendali irigasi histeresis SCADA dengan pemisahan `pumpCommand` vs `relayActual` dan batas timeout 120 detik.
-  9. **Peringatan (`#peringatan`)**: Daftar kejadian telemetri real-time dan konfigurasi aturan ambang batas.
-  10. **Pengaturan (`#pengaturan`)**: Konfigurasi URL Firebase RTDB Kelompok 5, interval polling, deadband histeresis, tema, dan preferensi satuan.
-  11. **Panduan (`#panduan`)**: Diagram alur kerja IoT, langkah instalasi step-by-step, troubleshooting, skema JSON RTDB Kelompok 5, dan pinout lengkap.
-- **Header Global Ringkas**: Menampilkan judul sistem, rentang tanggal / jam aktual WIB, status koneksi Firebase Kelompok 5 & ESP32-CAM, dan badge jumlah peringatan aktif.
-- **Top Area: Ringkasan Perangkat & 4 KPI Kartu Fisik**:
-  - *Status Perangkat & Kampanye*: Koneksi ESP32 (`/kelompok5`), Live Camera (`/stream`), Koneksi Kamera Wi-Fi, Upload JPEG (`FNV-1a`), dan Target Foto Valid (`0 / 1.600`).
-  - *Sensor Fisik Terpasang & Aktuator*: Kelembapan Tanah (HW-390, target 65–78%), Suhu Udara (DHT22, target 15–24°C), Kelembapan Udara (DHT22, target 60–80%), serta Status Pompa & Relay Irigasi (`ON / OFF`).
-- **Main Area: 3 Panel Komposisi Utama**:
-  1. *Live Camera View*: Preview kanopi ESP32-CAM dengan badge status LIVE/OFFLINE, resolusi SVGA 800×600, timestamp WIB, dan tombol reconnect.
-  2. *Plant Health Analysis*: Foto tanaman aktual dengan toggle overlay kontur/siluet/asli, kondisi tanaman fisiologis, lebar maksimal daun (px), luas siluet (px²), dan status evaluasi kualitas QC.
-  3. *AI Recommendations*: Rekomendasi agronomi real-time berdasarkan aturan histeresis, batas Tetens VPD, pencegahan tipburn, toleransi suhu bolting, dan GDD.
-- **Analytics Section**: Grafik primer telemetri real-time multi-metrik disertai 4 subgrid grafik pertumbuhan kanopi daun (Lebar, Luas, Growth Rate, GDD).
-- **Alerts & Notifications**: Notifikasi dinamis untuk kamera offline, aliran telemetri sensor, pelanggaran ambang batas mikroklimat, dan progres kuota dataset 1.600 gambar.
-- **Bottom Stats Bar**: 7 metrik ringkas: Total Gambar, Gambar Valid, Gambar Gagal, Sensor Aktif (3 unit), Progres Target (%), Durasi Monitoring (HST), dan Status Sistem SCADA.
-- **Mobile Responsive Drawer**: Pada viewport mobile/tablet, sidebar otomatis bertransformasi menjadi drawer tersembunyi dengan tombol pemicu hamburger `#menuToggle`, tombol tutup `#sideclose`, dan backdrop redup `#mobileBackdrop`. Panel bertumpuk secara vertikal, touch target $\ge 44\text{px}$, dan tabel dilengkapi pembungkus scroll horizontal internal (`overflow-x: auto`).
+### (1) Arsitektur 4 Menu Fokus & Jujur Data Real (Kelompok 5)
+Antarmuka dirancang ulang secara menyeluruh mengikuti standar Linear/Stripe dark mode (`#090d16` bg, `#111827` surface, border `1px solid rgba(255,255,255,0.08)`, aksen `#10b981` & `#f43f5e`, tipografi `tabular-nums`, ikon SVG Lucide 1.75px, zero AI emojis):
+- **Navigasi Responsif (4 Modul Utama)**:
+  1. **Dashboard (`#dashboard`)**: Menampilkan 5 kartu KPI data observasi nyata (Kelembapan Tanah, Suhu Udara, Kelembapan Udara, Status Pompa Irigasi, dan Lebar Daun), grafik telemetri multi-metrik beserta bar statistik nyata (Sampel, Minimum, Rata-rata, Maksimum), grafik histori pertumbuhan Lebar Daun (px) beserta statistik citra valid, dan tabel 10 pembacaan telemetri terbaru dengan ekspor CSV aman CWE-1236.
+  2. **Kamera & CNN (`#kamera`)**: Menggabungkan pantauan langsung ESP32-CAM (`Stream :81` / `Snapshot`) dengan validasi inline IP kamera serta panel struktur klasifikasi CNN 4 kelas antarmuka (**Siap Panen**, **Mendekati Panen**, **Masa Pertumbuhan**, dan **Bukan Selada**) yang terintegrasi dengan `model_selada_v2.h5` (3 kelas aktif: `siap_panen`, `mendekati_panen`, `masa_pertumbuhan`; kelas `bukan_selada` sebagai elemen UI informatif dengan badge **`BELUM TERSEDIA`** tanpa skor palsu) dengan **Lebar Daun** sebagai pengukuran pendukung dan status default **`BELUM ADA MODEL`**. Dilengkapi galeri dataset & capture yang dapat difilter per kelas.
+  3. **Prediksi LSTM (`#prediksi`)**: Satu-satunya halaman yang menampilkan proyeksi Lebar Daun dan tahap tumbuh 4 hari ke depan menggunakan jaringan saraf tiruan LSTM (TensorFlow.js) berdasarkan histori observasi nyata (minimal 8 hari) tanpa interpolasi sintetis dan tanpa mencampur data prediksi ke dalam data observasi.
+  4. **AI Assistant (`#ai`)**: Ditempatkan pada urutan paling bawah navigasi untuk konsultasi agronomi selada keriting, diagnosa sensor real-time, evaluasi lebar daun & status CNN, serta pembacaan hasil prediksi LSTM.
 
 ---
 
@@ -172,23 +151,67 @@ Dashboard dirancang ulang secara menyeluruh mengikuti estetika IoT pertanian mod
 
 ---
 
+## Catatan Rombakan Dashboard (November 2026)
+
+- Menu dirampingkan menjadi 4: **Dashboard**, **Kamera & CNN**, **Prediksi LSTM**, **AI Assistant**.
+- Dihapus: halaman sensor, peringatan, pertumbuhan daun, analisis tanaman, panduan, riwayat, otomasi, pengaturan, dan notifikasi, serta metrik kalori/kanopi/GDD/VPD. Hanya **lebar daun** yang dipertahankan.
+- Semua angka di Dashboard dan Kamera berasal dari **data real** (Firebase RTDB dan `data/growth_metadata.json`). Data prediksi **hanya** tampil di halaman Prediksi LSTM.
+- **Arsitektur CNN Eksternal (Google Colab)**: Seluruh proses *training* CNN dilakukan secara eksternal di **Google Colab**. Repository ini mempertahankan **CNN Dataset Manager** untuk pengelolaan dan ekspor dataset (`train`/`validation`/`test`), serta menyediakan **CNN Inference Adapter** (`scripts/cnn_inference_adapter.py` & `js/growth.js`) untuk memvalidasi dan menjalankan *inference* model hasil ekspor Colab di direktori `models/`. Apabila berkas model belum dipasang di `models/`, sistem menampilkan status jujur **`BELUM ADA MODEL`** tanpa mengarang prediksi.
+- LSTM: dilatih di browser dari rata-rata lebar daun harian (+ tahap CNN bila semua hari punya kelas); butuh minimal 8 hari data real. Citra `bukan_selada` dan citra gagal QC tidak ikut.
+- Tombol "Kontrol Pompa" lama dihapus karena hanya mengubah variabel lokal dan tidak mengirim apa pun ke Firebase. Kartu pompa kini menampilkan feedback relay asli dari ESP32.
+
+---
+
+## 2B. Arsitektur CNN Eksternal (Google Colab) & Panduan Pemasangan Model
+
+Repository ini memisahkan secara tegas antara **pengelolaan dataset + inference** (di dalam repository) dan **pelatihan model CNN** (dilakukan di Google Colab):
+
+### 1. Ekspor Dataset dari CNN Dataset Manager ke Google Colab
+1. Buka halaman **Kamera & CNN** -> bagian **CNN Dataset Manager (4 Kelas)**.
+2. Unggah foto selada keriting berlabel (`siap_panen`, `mendekati_panen`, `masa_pertumbuhan`, `bukan_selada`). Setiap foto divalidasi format biner (`JPG/PNG/WEBP`), ukuran, dimensi, dan duplikasi FNV-1a, serta diukur `leaf_width_px` pendukungnya oleh pipeline CV.
+3. Klik tombol **Ekspor Paket Split Colab** (`#dsBtnExportSplit`) untuk mengunduh manifest JSON terstratifikasi (`70% train`, `15% validation`, `15% test`) beserta template kontrak `metadata.json` dan `class_names.json`.
+
+### 2. Format Ekspor Google Colab ke Direktori `models/` & Integrasi `model_selada_v2.h5`
+Setelah *training* di Google Colab selesai, ekspor berkas-berkas berikut ke dalam direktori `models/`:
+- `model_selada_v2.h5` (HDF5 Keras) atau `model.keras` / `model.tflite`
+- `class_names.json` — memuat 3 kelas output asli model: `["siap_panen", "mendekati_panen", "masa_pertumbuhan"]`
+- `metadata.json` — memuat `model_version`, `architecture`, `format` (`"h5"`, `"keras"`, atau `"tflite"`), `training_source` (`"google_colab"`), `input_shape` (`[H, W, 3]`), `class_names` (urutan identik dengan `class_names.json`), dan objek `preprocessing` (`color_mode: "RGB"`, `resize_mode`, `target_size: [H, W]`, `normalization`: `"rescale_0_1"` / `"mobilenet_v2_-1_1"` / `"imagenet_mean_std"` / `"raw_0_255"`).
+- `evaluation.json` — memuat metrik numerik `[0.0 .. 1.0]` (`accuracy`, `precision_macro`, `recall_macro`, `f1_macro`) dan `confusion_matrix` `3x3`.
+
+Detail skema JSON lengkap tersedia pada [models/README.md](file:///storage/emulated/0/Documents/selada-workspace/models/README.md).
+
+### 3. Validasi 7 Lapis, Kesamaan Preprocessing & Proteksi Rollback Atomik
+Sebelum model diaktifkan oleh `CNNInferenceAdapter`, sistem memvalidasi:
+1. Kelengkapan berkas wajib.
+2. Keberadaan 3 kelas output aktif model (`siap_panen`, `mendekati_panen`, `masa_pertumbuhan`) tanpa memaksakan 4 kelas pada model.
+3. Kesesuaian urutan label (`class_names.json` vs `metadata.json` vs `evaluation.json`) tanpa mengubah urutan output model.
+4. Validitas `input_shape` (`[H, W, 3]`, `64..1024 px`).
+5. Validitas `preprocessing` dan `normalization` (memastikan preprocessing *inference* 100% identik dengan *training* di Colab).
+6. Validitas arsitektur, versi model, sumber `google_colab`, dan metrik evaluasi.
+7. Integritas header biner (`\x89HDF` untuk `.h5`, `TFL3` FlatBuffer untuk `.tflite`, ZIP untuk `.keras`) dan uji kompatibilitas runtime.
+
+Apabila import/registrasi model baru **gagal pada salah satu tahap validasi**, model baru ditolak dan **model aktif sebelumnya tetap dipertahankan (atomic rollback)**. Bila belum ada model sama sekali di `models/`, status tetap **`BELUM ADA MODEL`**. Kelas ke-4 (**Bukan Selada**) ditampilkan pada antarmuka sebagai elemen informatif dengan status **`BELUM TERSEDIA`** tanpa probabilitas palsu.
+
+
 ## 3. Struktur Repository & Berkas Modul
 
 ```
 selada-workspace/
+├── index.html                 # Satu halaman, 4 menu: Dashboard, Kamera & CNN, Prediksi LSTM, AI Assistant (paling bawah)
 ├── css/
-│   └── style.css            # Desain sistem Anti-AI-Slop, 12 modul navigasi, responsive breakpoints
+│   └── app.css              # Gaya tunggal, terang/gelap otomatis, nav bawah di ponsel & sidebar di desktop
 ├── firmware/
 │   ├── esp32_kelompok5_sensor/
 │   │   └── esp32_kelompok5_sensor.ino          # Firmware ESP32 Kelompok 5 (Non-blocking millis(), histeresis 65-78%, RTDB /kelompok5)
 │   └── esp32cam_kelompok5_autonomous/
 │       └── esp32cam_kelompok5_autonomous.ino   # Firmware ESP32-CAM Kelompok 5 (/stream :81, scheduler Wi-Fi mandiri, upload JPEG langsung ke server)
 ├── js/
-│   ├── firebase-config.js   # SecurityUtils (DOM XSS, CWE-1236), ConfigStore (/kelompok5), FirebaseEdgeClient
-│   ├── dataset.js           # DatasetStore, statistik telemetri, tabel riwayat, paginasi, export CSV
-│   ├── leaf-growth.js       # LeafGrowthManager, polling status kamera dan koneksi Wi-Fi (/status), galeri, modal inspeksi
-│   ├── ai-assistant.js      # DSS Agronomi Selada, Tetens VPD, unit termal GDD, chat thread
-│   └── dashboard.js         # Pengendali utama, router 12 halaman, live camera /stream, SCADA histeresis, ResizeObserver chart
+│   ├── firebase-config.js   # SecurityUtils (DOM XSS, CWE-1236), ConfigStore, FirebaseEdgeClient (data sensor real)
+│   ├── dataset.js           # DatasetStore: telemetri real, jendela waktu, export CSV
+│   ├── growth.js            # GrowthStore: lebar daun real dari data/growth_metadata.json + 4 kelas CNN
+│   ├── forecast.js          # LSTM (TensorFlow.js) prediksi lebar daun 4 hari ke depan
+│   ├── ai-assistant.js      # Asisten agronomi berbasis aturan, membaca data real & hasil prediksi
+│   └── app.js               # Navigasi, grafik SVG, kamera, hasil CNN, halaman prediksi
 ├── scripts/
 │   ├── growth_cv_pipeline.py      # Engine computer vision (ExG Otsu, morfologi, kontur, pengukuran Kelompok 5)
 │   └── scheduler_daemon.py        # Daemon otomasi capture 10 menit & HTTP receiver JPEG kamera melalui Wi-Fi (FNV-1a verification)
@@ -266,7 +289,7 @@ python3 scripts/scheduler_daemon.py --daemon --cam-url http://192.168.1.23/captu
 Suite pengujian otomatis mengevaluasi seluruh spesifikasi keamanan, integritas data, histeresis SCADA, DSS Tetens/GDD, scheduler, CV pipeline, dan responsive breakpoint:
 
 ```bash
-# 1. Jalankan pengujian menyeluruh Node.js (109 tes)
+# 1. Jalankan pengujian frontend Node.js (opsional: TFJS_PATH=/path/ke/@tensorflow/tfjs untuk uji LSTM sungguhan)
 node tests/run-all-tests.js
 
 # 2. Jalankan pengujian Computer Vision & Scheduler Python (10 tes)

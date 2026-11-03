@@ -5,6 +5,10 @@
     "api/kelompok5/capture.py": {
       "maxDuration": 15,
       "excludeFiles": "{tests,firmware,data}/**"
+    },
+    "api/kelompok5/dataset.py": {
+      "maxDuration": 15,
+      "excludeFiles": "{tests,firmware,data}/**"
     }
   }
 }

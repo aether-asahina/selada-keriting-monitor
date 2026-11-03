@@ -1,265 +1,183 @@
 /**
- * ==============================================================================
- * MODULE: AGRONOMIC DECISION SUPPORT SYSTEM (Lactuca sativa L. Expert System)
- * Hardened for: DOM XSS Mitigation, Transparent Horticultural Rules, Tetens VPD
- * Declared Nature: Rule-Based Expert System / Physiological Heuristic Model
- * ==============================================================================
+ * AI Assistant: sistem pakar berbasis aturan untuk selada keriting (Lactuca sativa L. var. crispa).
+ * Membaca data REAL (sensor + lebar daun). Prediksi hanya dirujuk dari hasil LSTM yang sudah dihitung.
  */
-
 (function (window) {
     'use strict';
 
-    const Sec = window.SecurityUtils || {
-        escapeHTML: s => String(s || ''),
-        sanitizeHTML: s => String(s || '')
+    const Sec = window.SecurityUtils;
+    const P = {
+        soil: { min: 65, max: 78 },
+        air: { min: 60, max: 80 },
+        temp: { min: 15, max: 24, tolerated: 28 }
     };
 
-    // Agronomic Constants based on Horticulture Research for Curly Lettuce
-    const LETTUCE_SPECIES = 'Lactuca sativa L. var. crispa (Selada Keriting)';
-    const AGRONOMIC_PARAMS = {
-        soilMoisture: { min: 65, max: 78, unit: '%' },
-        airHumidity: { min: 60, max: 80, unit: '%' },
-        temperature: { min: 15.0, optimalMax: 24.0, maxTolerated: 28.0, unit: '°C' },
-        vpd: { min: 0.45, max: 0.90, unit: 'kPa' },
-        baseTempGDD: 4.0, // Standard base temperature for lettuce Growing Degree Days
-        harvestTargetGDD: 700 // Cumulative thermal units required from transplanting
-    };
-
-    /**
-     * Calculate Vapor Pressure Deficit (VPD in kPa) using Tetens equation
-     * SVP = 0.61078 * exp((17.27 * T) / (T + 237.3))
-     * AVP = SVP * (RH / 100)
-     * VPD = SVP - AVP
-     */
-    function calculateVPD(tempC, humidityPct) {
-        if (!Number.isFinite(tempC) || !Number.isFinite(humidityPct)) return null;
-        const validT = Math.max(0, Math.min(50, tempC));
-        const validRH = Math.max(5, Math.min(100, humidityPct));
-        const svp = 0.61078 * Math.exp((17.27 * validT) / (validT + 237.3));
-        const avp = svp * (validRH / 100);
-        return Math.max(0, Number((svp - avp).toFixed(2)));
-    }
+    const esc = s => Sec.escapeHTML(s);
 
     class AIAssistant {
         constructor() {
-            this.chatHistory = [];
-            this.initWelcomeMessage();
-        }
-
-        calculateVPD(tempC, humidityPct) {
-            return calculateVPD(tempC, humidityPct);
-        }
-
-        initWelcomeMessage() {
-            this.chatHistory.push({
+            this.history = [{
                 sender: 'ai',
                 time: new Date(),
-                text: `Halo, saya <b>Sistem Pakar Agronomi Selada Keriting (${LETTUCE_SPECIES})</b>. Saya bekerja berbasis aturan fisiologi mikroklimat tanaman (Rule-Based Expert System): kelembapan tanah optimal 65–78%, kelembapan udara 60–80%, suhu 15–24°C, dan target VPD 0.45–0.90 kPa. Silakan klik tombol 'Diagnosa Otomatis' atau pilih topik konsultasi.`
-            });
+                text: 'Halo, saya asisten agronomi <b>Selada Keriting</b>. Saya membaca data sensor dan lebar daun yang tercatat, lalu menjawab berdasarkan aturan budidaya. Pilih topik di bawah atau ketik pertanyaan.'
+            }];
         }
 
-        /**
-         * Real-time automated agronomic diagnosis
-         */
-        diagnoseCurrentConditions(latestRecord) {
-            if (!latestRecord || !Number.isFinite(latestRecord.tanah)) {
-                return {
-                    status: 'neutral',
-                    title: 'Data Telemetri Belum Tersedia',
-                    summary: 'Menunggu penerimaan paket telemetri tervalidasi dari sensor IoT Firebase RTDB.',
-                    soil: { val: '—', status: 'Menunggu data' },
-                    air: { val: '—', status: 'Menunggu data' },
-                    temp: { val: '—', status: 'Menunggu data' },
-                    vpd: { val: '—', status: 'Menunggu data' },
-                    pump: 'Siaga',
-                    recommendations: ['Pastikan koneksi ESP32 aktif.'],
-                    overallHealth: 'Menunggu'
-                };
-            }
-
-            const tanah = Number(latestRecord.tanah);
-            const udara = Number(latestRecord.udara);
-            const suhu = Number(latestRecord.suhu);
-            const vpd = calculateVPD(suhu, udara);
+        diagnose(sensor) {
+            if (!sensor || !Number.isFinite(sensor.tanah)) return null;
             const issues = [];
-            const recommendations = [];
-
-            // 1. Soil Moisture Diagnosis (65% - 78%)
-            let soilStatus = 'Optimal';
-            let pumpCommandDesc = 'Siaga (Mati)';
-            if (tanah < AGRONOMIC_PARAMS.soilMoisture.min) {
-                soilStatus = 'Defisit Air (< 65%)';
-                pumpCommandDesc = 'Perintah Irigasi: AKTIF';
-                issues.push(`Kelembapan tanah (${tanah}%) berada di bawah ambang normal (${AGRONOMIC_PARAMS.soilMoisture.min}%).`);
-                recommendations.push(`Otomasi histeresis memerintahkan pompa menyala untuk memulihkan turgor sel mesofil dan mencegah dehidrasi perakaran.`);
-            } else if (tanah > AGRONOMIC_PARAMS.soilMoisture.max) {
-                soilStatus = 'Kejenuhan Air (> 78%)';
-                pumpCommandDesc = 'Perintah Irigasi: MATI';
-                issues.push(`Kelembapan tanah (${tanah}%) melampaui kapasitas lapang (${AGRONOMIC_PARAMS.soilMoisture.max}%).`);
-                recommendations.push(`Pompa dimatikan guna mencegah hipoksia (asfiksia perakaran) dan risiko infeksi patogen Pythium sp.`);
-            } else {
-                recommendations.push(`Kelembapan tanah berada pada kapasitas lapang ideal (65–78%). Penyerapan nutrisi berlangsung seimbang.`);
+            const tips = [];
+            if (sensor.tanah < P.soil.min) {
+                issues.push(`Tanah kering (${sensor.tanah}%, batas ${P.soil.min}%).`);
+                tips.push('Irigasi perlu menyala agar turgor sel dan perakaran terjaga.');
+            } else if (sensor.tanah > P.soil.max) {
+                issues.push(`Tanah terlalu basah (${sensor.tanah}%, batas ${P.soil.max}%).`);
+                tips.push('Hentikan irigasi untuk mencegah akar kekurangan oksigen dan penyakit Pythium.');
             }
-
-            // 2. Air Humidity Diagnosis (60% - 80%)
-            let airStatus = 'Normal';
-            if (udara < AGRONOMIC_PARAMS.airHumidity.min) {
-                airStatus = 'Kering (< 60%)';
-                issues.push(`Kelembapan udara (${udara}%) di bawah rentang aman (60%).`);
-                recommendations.push(`Transpirasi cepat dapat memicu nekrosis margin daun muda (tipburn) akibat hambatan translokasi kalsium.`);
-            } else if (udara > AGRONOMIC_PARAMS.airHumidity.max) {
-                airStatus = 'Lembap Berlebih (> 80%)';
-                issues.push(`Kelembapan udara (${udara}%) melampaui 80%.`);
-                recommendations.push(`Tingkatkan sirkulasi udara mikro (airflow) untuk menekan perkecambahan spora jamur Botrytis cinerea dan Bremia lactucae.`);
+            if (sensor.udara < P.air.min) {
+                issues.push(`Udara kering (${sensor.udara}%, batas ${P.air.min}%).`);
+                tips.push('Udara kering memicu tipburn pada daun muda.');
+            } else if (sensor.udara > P.air.max) {
+                issues.push(`Udara terlalu lembap (${sensor.udara}%, batas ${P.air.max}%).`);
+                tips.push('Tingkatkan sirkulasi udara untuk menekan jamur Botrytis dan Bremia.');
             }
-
-            // 3. Temperature & VPD Diagnosis
-            let tempStatus = 'Optimal';
-            if (suhu > AGRONOMIC_PARAMS.temperature.maxTolerated) {
-                tempStatus = 'Panas (> 28°C)';
-                issues.push(`Suhu mikroklimat (${suhu}°C) melebihi batas toleransi vegetatif.`);
-                recommendations.push(`Suhu tinggi memicu inisiasi pembungaan dini (bolting) dan akumulasi laktukarium yang menimbulkan rasa pahit.`);
-            } else if (suhu < AGRONOMIC_PARAMS.temperature.min) {
-                tempStatus = 'Dingin (< 15°C)';
-                issues.push(`Suhu mikroklimat (${suhu}°C) di bawah suhu tumbuh aktif.`);
-                recommendations.push(`Laju metabolisme dan akumulasi biomassa melambat.`);
+            if (sensor.suhu > P.temp.tolerated) {
+                issues.push(`Suhu terlalu tinggi (${sensor.suhu}°C, toleransi ${P.temp.tolerated}°C).`);
+                tips.push('Suhu tinggi memicu bolting dan rasa pahit. Beri naungan.');
+            } else if (sensor.suhu > P.temp.max) {
+                issues.push(`Suhu hangat di atas rentang ideal (${sensor.suhu}°C, ideal ${P.temp.min}–${P.temp.max}°C).`);
+                tips.push('Tingkatkan ventilasi atau pasang paranet agar suhu tidak melewati batas toleransi 28°C.');
+            } else if (sensor.suhu < P.temp.min) {
+                issues.push(`Suhu rendah (${sensor.suhu}°C, minimal ${P.temp.min}°C).`);
+                tips.push('Pertumbuhan melambat pada suhu rendah.');
             }
-
-            return {
-                timestamp: latestRecord.t,
-                soil: { val: tanah, status: soilStatus },
-                air: { val: udara, status: airStatus },
-                temp: { val: suhu, status: tempStatus },
-                vpd: { val: vpd, status: (vpd >= 0.45 && vpd <= 0.90) ? 'Optimal (0.45–0.90 kPa)' : 'Non-optimal' },
-                pump: pumpCommandDesc,
-                source: latestRecord.source || 'live',
-                issues: issues,
-                recommendations: recommendations,
-                overallHealth: issues.length === 0 ? 'Optimal' : (issues.length === 1 ? 'Perhatian' : 'Kritis')
-            };
+            return { issues: issues, tips: tips };
         }
 
-        async query(question, currentRecord) {
-            const cleanQuestion = String(question || '').trim();
-            if (!cleanQuestion) return;
-
-            // Record user message
-            this.chatHistory.push({
-                sender: 'user',
-                time: new Date(),
-                text: cleanQuestion
-            });
-
-            // Process response via rule-based decision engine
-            const reply = this.processKnowledgeBase(cleanQuestion.toLowerCase(), currentRecord);
-
-            this.chatHistory.push({
-                sender: 'ai',
-                time: new Date(),
-                text: reply
-            });
-
+        async query(question, ctx) {
+            const text = String(question || '').trim();
+            if (!text) return null;
+            this.history.push({ sender: 'user', time: new Date(), text: text });
+            const reply = this.answer(text, ctx || {});
+            this.history.push({ sender: 'ai', time: new Date(), text: reply });
             return reply;
         }
 
-        processKnowledgeBase(q, currentRecord) {
-            const diag = this.diagnoseCurrentConditions(currentRecord);
+        answer(rawQuestion, ctx) {
+            const q = String(rawQuestion || '').toLowerCase();
+            const has = (...w) => w.some(x => q.includes(x));
+            const sensor = ctx.sensor;
+            const leaf = ctx.leaf;
+            const GS = window.GrowthStore;
+            const classes = GS.CLASSES;
 
-            // 1. Analisis Kondisi Sensor Real-time
-            if (q.includes('analisis') || q.includes('kondisi') || q.includes('realtime') || q.includes('sekarang') || q.includes('sensor')) {
-                if (!currentRecord || !Number.isFinite(currentRecord.tanah)) {
-                    return `Data telemetri sensor saat ini belum tersedia (Status: OFFLINE / NO DATA). Pastikan perangkat ESP32 tersambung ke WiFi dan Firebase RTDB.`;
+            // 1. Prediksi LSTM 4 hari ke depan
+            if (has('prediksi', 'lstm', 'ramal', 'besok', '4 hari')) {
+                const f = ctx.forecast;
+                if (!f || !f.ok) {
+                    return 'Prediksi LSTM belum tersedia. Model butuh minimal 8 hari data lebar daun valid dari kamera. Buka menu <b>Prediksi LSTM</b> untuk melihat progresnya.';
                 }
-                const sourceBadge = currentRecord.source === 'live' ? '[TELEMETRI LIVE · TERVALIDASI]' : (currentRecord.source === 'cache' ? '[OFFLINE CACHE · TERVALIDASI]' : '[OFFLINE / DISCONNECTED]');
-                return `<b>Laporan Diagnosa Fisiologis Selada Keriting:</b><br>` +
-                    `<i>Status Sumber Data: ${Sec.escapeHTML(sourceBadge)}</i><br>` +
-                    `• <b>Kelembapan Tanah:</b> ${diag.soil.val}% (${diag.soil.status})<br>` +
-                    `• <b>Kelembapan Udara:</b> ${diag.air.val}% (${diag.air.status})<br>` +
-                    `• <b>Suhu Mikroklimat:</b> ${diag.temp.val}°C (${diag.temp.status})<br>` +
-                    `• <b>Defisit Tekanan Uap (VPD):</b> ${diag.vpd.val !== null ? diag.vpd.val + ' kPa' : 'NO DATA'} (${diag.vpd.status})<br>` +
-                    `• <b>Logika Pompa:</b> ${diag.pump}<br><br>` +
-                    `<b>Evaluasi & Rekomendasi:</b><br>` +
-                    diag.recommendations.map(r => `• ${Sec.escapeHTML(r)}`).join('<br>');
+                const lines = f.forecast.map((d, i) => {
+                    const stage = d.stage === null ? '' : ' · ' + esc(this.stageLabel(d.stage));
+                    return `• Hari +${i + 1}: <b>${d.width.toFixed(1)} px</b>${stage}`;
+                });
+                return '<b>Prediksi lebar daun 4 hari ke depan (LSTM):</b><br>' + lines.join('<br>') +
+                    '<br><i>Ini perkiraan model, bukan pengukuran observasi nyata.</i>';
             }
 
-            // 2. Kelembapan Tanah & Logika Pompa
-            if (q.includes('tanah') || q.includes('kelembapan tanah') || q.includes('pompa') || q.includes('irigasi')) {
-                return `<b>Standar Kelembapan Tanah Selada Keriting (Lactuca sativa L.):</b><br>` +
-                    `Berdasarkan kajian agronomi, kapasitas lapang optimal adalah <b>65% hingga 78%</b>.<br><br>` +
-                    `<b>Logika Histeresis Kontrol:</b><br>` +
-                    `1. <b>Kelembapan &lt; 65%:</b> Sistem mengirim perintah irigasi AKTIF.<br>` +
-                    `2. <b>Rentang 65%–78%:</b> Deadband histeresis (mempertahankan status siklus sebelumnya guna mencegah switching relay berulang).<br>` +
-                    `3. <b>Kelembapan &gt; 78%:</b> Sistem mengirim perintah irigasi MATI.<br>` +
-                    `<i>Catatan SCADA: Dashboard menampilkan 'Perintah Kontrol'. Konfirmasi fisik motor memerlukan sensor arus/kontak balik relay hardware.</i>`;
+            // 2. Klasifikasi CNN 4 kelas & status model
+            if (has('cnn', 'kelas', 'klasifikasi', 'bukan selada', 'model', 'colab')) {
+                const c = GS.classCounts();
+                const m = typeof GS.getModelStatus === 'function' ? GS.getModelStatus() : { available: false, status: 'BELUM ADA MODEL' };
+                const ws = typeof GS.widthStats === 'function' ? GS.widthStats() : null;
+                const modelLine = m.available
+                    ? `${esc(m.status)} (${esc(m.model_version || m.binary_file || 'model_selada_v2.h5')} · ${esc(m.architecture || 'CNN')})`
+                    : esc(m.status || 'BELUM ADA MODEL');
+                return `<b>Klasifikasi CNN (Status Model: ${modelLine})</b><br>` +
+                    'Sistem mempertahankan 4 kelas antarmuka sesuai spesifikasi dosen, dengan integrasi inference <code>model_selada_v2.h5</code> (3 kelas aktif):<br>' +
+                    `• Siap Panen (Aktif): ${c.siap_panen}<br>• Mendekati Panen (Aktif): ${c.mendekati_panen}<br>` +
+                    `• Masa Pertumbuhan (Aktif): ${c.masa_pertumbuhan}<br>• Bukan Selada: <b>BELUM TERSEDIA</b> (elemen UI informatif tanpa probabilitas palsu)<br>` +
+                    `• Belum diklasifikasi: ${c.belum}` +
+                    (ws && ws.count ? `<br><br>Rata-rata lebar daun valid saat ini: <b>${ws.avg.toFixed(1)} px</b> (${ws.count} citra).` : '');
             }
 
-            // 3. Tipburn pada Selada
-            if (q.includes('tipburn') || q.includes('daun kering') || q.includes('gosong')) {
-                return `<b>Pencegahan Fisiologis Tipburn:</b><br>` +
-                    `Tipburn adalah nekrosis marginal pada daun muda akibat ketidakseimbangan translokasi kalsium (Ca2+) selama fase pertumbuhan cepat.<br><br>` +
-                    `<b>Langkah Preventif Berdasarkan Riset:</b><br>` +
-                    `• Pertahankan kelembapan udara konstan pada <b>60–80%</b>.<br>` +
-                    `• Pertahankan VPD mikroklimat pada <b>0.5–0.85 kPa</b>.<br>` +
-                    `• Hindari fluktuasi kelembapan tanah drastis di bawah 65%.<br>` +
-                    `• Pasang sirkulasi udara tajuk (horizontal/vertical airflow) pada malam hari untuk memicu gutasi dan aliran massa kalsium.`;
+            // 3. Fisiologi Tipburn (diprioritaskan sebelum kata umum 'daun'/'tanah')
+            if (has('tipburn', 'gosong', 'ujung daun')) {
+                return '<b>Tipburn</b> adalah ujung daun muda yang mengering akibat kalsium tidak terdistribusi. ' +
+                    `Jaga kelembapan udara ${P.air.min}–${P.air.max}%, hindari tanah kering di bawah ${P.soil.min}%, dan pastikan ada aliran udara.`;
             }
 
-            // 4. Suhu & Bolting
-            if (q.includes('suhu') || q.includes('panas') || q.includes('bolting') || q.includes('pahit')) {
-                return `<b>Pengaruh Suhu & Mitigasi Bolting:</b><br>` +
-                    `Suhu optimal selada keriting adalah <b>15°C – 24°C</b>.<br><br>` +
-                    `Bila suhu melampaui <b>28°C</b>:<br>` +
-                    `• Terjadi induksi giberelin yang memicu pemanjangan batang berbunga prematur (bolting).<br>` +
-                    `• Terjadi sintesis senyawa <i>sesquiterpene lactones</i> (laktusin) yang menyebabkan daun terasa pahit dan berserat kasar.<br>` +
-                    `Gunakan naungan paranet 50% atau pendinginan evaporatif (mist cooling) saat radiasi siang hari memuncak.`;
+            // 4. Diagnosa kondisi real-time (diprioritaskan sebelum kata umum 'tanah'/'suhu')
+            if (has('kondisi', 'analisis', 'sekarang', 'diagnosa', 'real-time', 'realtime')) {
+                const d = this.diagnose(sensor);
+                if (!d) return 'Data sensor belum tersedia. Pastikan ESP32 menyala dan tersambung ke Wi-Fi.';
+                const head = `<b>Kondisi terakhir:</b> tanah ${sensor.tanah}%, udara ${sensor.udara}%, suhu ${sensor.suhu}°C.` +
+                    (leaf && leaf.width ? ` Lebar daun terakhir: <b>${leaf.width.toFixed(1)} px</b>.` : '') + '<br><br>';
+                if (!d.issues.length) return head + 'Semua parameter berada di rentang optimal.';
+                return head + d.issues.map(i => '• ' + esc(i)).join('<br>') + '<br><br><b>Saran:</b><br>' + d.tips.map(t => '• ' + esc(t)).join('<br>');
             }
 
-            // 5. Umur & Waktu Panen (HST & GDD)
-            if (q.includes('panen') || q.includes('umur') || q.includes('hst') || q.includes('tanam') || q.includes('gdd')) {
-                return `<b>Siklus Panen & Akumulasi Termal GDD:</b><br>` +
-                    `• <b>Siklus Normal:</b> 35 – 45 Hari Setelah Tanam (HST).<br>` +
-                    `• <b>Satuan Termal (GDD):</b> Memerlukan akumulasi ~650–750 GDD (Base Temp 4.0°C).<br>` +
-                    `• <b>Kriteria Fisik Siap Panen:</b> Tajuk roset padat bergelombang, bobot 150–250g per tanaman, tekstur renyah sebelum sumbu batang memanjang.<br>` +
-                    `• <b>Waktu Panen Ideal:</b> Pukul 06.00–08.00 pagi saat tekanan turgor sel maksimum untuk umur simpan optimal.`;
+            // 5. Suhu & risiko bolting
+            if (has('suhu', 'panas', 'bolting', 'pahit')) {
+                return `<b>Suhu ideal ${P.temp.min}–${P.temp.max}°C.</b> Di atas ${P.temp.tolerated}°C selada rawan bolting dan terasa pahit. ` +
+                    'Gunakan paranet 50% atau pendinginan saat siang.' + (sensor ? `<br><br>Suhu terakhir: <b>${sensor.suhu}°C</b>.` : '');
             }
 
-            // Fallback response with strict HTML escaping
-            const safeQuery = Sec.escapeHTML(q);
-            return `Pertanyaan Anda mengenai "<i>${safeQuery}</i>" terkait dengan budidaya <b>Selada Keriting (Lactuca sativa L.)</b>. Sistem pakar memantau 3 parameter kritis: kelembapan tanah (65–78%), kelembapan udara (60–80%), dan suhu lingkungan. Anda dapat mengklik tombol 'Diagnosa Otomatis Real-time' untuk evaluasi mikroklimat instan.`;
+            // 6. Kelembapan tanah & kontrol histeresis pompa
+            if (has('tanah', 'pompa', 'irigasi', 'siram')) {
+                return `<b>Kelembapan tanah optimal ${P.soil.min}–${P.soil.max}%.</b><br>` +
+                    `• Di bawah ${P.soil.min}%: pompa menyala.<br>• Di atas ${P.soil.max}%: pompa mati.<br>` +
+                    '• Di antaranya: status pompa dipertahankan (histeresis) agar relay tidak bolak-balik.' +
+                    (sensor ? `<br><br>Pembacaan terakhir: <b>${sensor.tanah}%</b>.` : '');
+            }
+
+            // 7. Panen & Lebar Daun
+            if (has('panen', 'daun', 'lebar', 'umur', 'hst', 'tumbuh')) {
+                let msg = '<b>Panen selada keriting:</b> siklus normal 35–45 HST. Panen terbaik pagi hari (06.00–08.00) saat turgor sel maksimum.<br>';
+                if (leaf && leaf.width) {
+                    const st = typeof GS.getModelStatus === 'function' ? GS.getModelStatus().status : 'BELUM ADA MODEL';
+                    msg += `<br>Lebar daun terakhir tercatat <b>${leaf.width.toFixed(1)} px</b>` +
+                        (leaf.cls ? ` (kelas CNN: ${esc(classes[leaf.cls].label)})` : ` (status CNN: ${esc(st)})`) + '.';
+                } else {
+                    msg += '<br>Belum ada citra valid yang tercatat.';
+                }
+                return msg;
+            }
+
+            // 8. Pertanyaan "kering" umum yang tidak menyebut tanah/daun spesifik
+            if (has('kering')) {
+                return '<b>Penanganan kondisi kering:</b> jaga kelembapan tanah pada rentang <b>65–78%</b> dan kelembapan udara <b>60–80%</b> untuk mencegah layu serta tipburn.';
+            }
+
+            return `Saya belum paham pertanyaan "<i>${esc(rawQuestion)}</i>". Coba tanyakan soal kondisi sensor, tanah dan pompa, suhu, panen dan lebar daun, klasifikasi CNN, atau prediksi LSTM.`;
         }
 
-        renderThread(containerId) {
-            const container = document.getElementById(containerId);
+        stageLabel(ord) {
+            const C = window.GrowthStore.CLASSES;
+            const key = Object.keys(C).find(k => C[k].ord === ord);
+            return key ? C[key].label : '—';
+        }
+
+        render(container) {
             if (!container) return;
-
-            // XSS DEFENSE: Strictly escape user content, allowlist-sanitize AI formatting
-            const html = this.chatHistory.map(item => {
-                const isAI = item.sender === 'ai';
-                const senderClass = isAI ? 'ai' : 'user';
-                const senderLabel = isAI ? 'AGRONOMIST DSS' : 'ANDA';
-                const timeStr = item.time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-                const safeContent = isAI 
-                    ? Sec.sanitizeHTML(item.text) 
-                    : Sec.escapeHTML(item.text);
-
-                return `
-                    <div class="chat-bubble ${senderClass}">
-                        <div class="bubble-content">
-                            ${safeContent}
-                        </div>
-                        <div class="bubble-meta">
-                            <span>${Sec.escapeHTML(senderLabel)}</span> · <span>${Sec.escapeHTML(timeStr)}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            container.innerHTML = html;
+            container.textContent = '';
+            this.history.forEach(m => {
+                const wrap = document.createElement('div');
+                wrap.className = 'bubble ' + (m.sender === 'ai' ? 'ai' : 'user');
+                const body = document.createElement('div');
+                body.className = 'bubble-body';
+                body.innerHTML = m.sender === 'ai' ? Sec.sanitizeHTML(m.text) : esc(m.text);
+                const meta = document.createElement('div');
+                meta.className = 'bubble-meta';
+                meta.textContent = (m.sender === 'ai' ? 'Asisten' : 'Anda') + ' · ' +
+                    m.time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                wrap.appendChild(body);
+                wrap.appendChild(meta);
+                container.appendChild(wrap);
+            });
             container.scrollTop = container.scrollHeight;
         }
     }
 
     window.AIAssistant = new AIAssistant();
-
 })(window);

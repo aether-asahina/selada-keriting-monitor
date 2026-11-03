@@ -26,6 +26,11 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+try:
+    from cnn_inference_adapter import get_default_cnn_adapter, STATUS_NO_MODEL
+except ImportError:
+    from scripts.cnn_inference_adapter import get_default_cnn_adapter, STATUS_NO_MODEL
+
 # ----------------------------------------------------------------------------
 # Constants & Configuration
 # ----------------------------------------------------------------------------
@@ -41,11 +46,12 @@ MAX_BRIGHTNESS = 238.0  # Above this = overexposed / bleached
 MIN_LAPLACIAN_VAR = 30.0 # Below this = heavily blurred / defocused
 
 class LettuceCVPipeline:
-    def __init__(self, output_dir="data/growth_images", meta_file="data/growth_metadata.json", calib_factor_mm_per_px=None, use_tmp_only=False):
+    def __init__(self, output_dir="data/growth_images", meta_file="data/growth_metadata.json", calib_factor_mm_per_px=None, use_tmp_only=False, cnn_adapter=None, models_dir=None):
         self.output_dir = output_dir
         self.meta_file = meta_file
         self.calib_factor = calib_factor_mm_per_px # None if uncalibrated
         self.use_tmp_only = bool(use_tmp_only)
+        self.cnn_adapter = cnn_adapter if cnn_adapter is not None else get_default_cnn_adapter(models_dir=models_dir)
         self.algo_version = "v1.2-exg-otsu"
         self._meta_lock = threading.Lock()
 
@@ -295,6 +301,26 @@ class LettuceCVPipeline:
             leaf_width_mm = round(measurements["leaf_width_px"] * self.calib_factor, 2)
             leaf_area_mm2 = round(measurements["leaf_area_px"] * (self.calib_factor ** 2), 2)
 
+        # 7. Decoupled External Colab CNN Inference Adapter
+        if is_valid and self.cnn_adapter is not None:
+            cnn_res = self.cnn_adapter.predict(
+                cropped_pil,
+                leaf_width_px=measurements["leaf_width_px"],
+                timestamp_ms=now_ts,
+            )
+        else:
+            st_dict = self.cnn_adapter.get_status_dict() if self.cnn_adapter is not None else {}
+            cnn_res = {
+                "cnn_status": st_dict.get("cnn_status", STATUS_NO_MODEL),
+                "cnn_class": None,
+                "cnn_confidence": None,
+                "cnn_probabilities": None,
+                "model_version": st_dict.get("model_version"),
+                "model_architecture": st_dict.get("architecture"),
+                "classified_at": None,
+                "is_test_model": bool(st_dict.get("is_test_model", False)),
+            }
+
         record = {
             "kelompok": "Kelompok 5",
             "image_id": image_id,
@@ -306,6 +332,14 @@ class LettuceCVPipeline:
             "leaf_width_mm": leaf_width_mm,
             "leaf_area_px": measurements["leaf_area_px"],
             "leaf_area_mm2": leaf_area_mm2,
+            "cnn_class": cnn_res.get("cnn_class"),
+            "cnn_confidence": cnn_res.get("cnn_confidence"),
+            "cnn_probabilities": cnn_res.get("cnn_probabilities"),
+            "cnn_status": cnn_res.get("cnn_status", STATUS_NO_MODEL),
+            "model_version": cnn_res.get("model_version"),
+            "model_architecture": cnn_res.get("model_architecture"),
+            "classified_at": cnn_res.get("classified_at"),
+            "is_test_model": bool(cnn_res.get("is_test_model", False)),
             "quality_status": quality_status,
             "quality_detail": detail_msg,
             "processing_status": processing_status,

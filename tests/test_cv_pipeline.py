@@ -463,6 +463,15 @@ class _InMemoryFirebaseTransport:
 
         if method == "GET":
             val = self.store.get(rel_path)
+            if val is None:
+                prefix = rel_path.rstrip("/") + "/"
+                children = {
+                    k[len(prefix):]: v
+                    for k, v in self.store.items()
+                    if k.startswith(prefix) and "/" not in k[len(prefix):] and v is not None
+                }
+                if children:
+                    val = children
             resp_headers = {}
             if not self.omit_etag_on_get and hdrs.get("x-firebase-etag") == "true":
                 resp_headers["ETag"] = self.etags.get(rel_path, "etag-null")
@@ -1111,6 +1120,392 @@ class TestVercelServerlessCaptureUnitMock(unittest.TestCase):
         st_bad_src, body_bad_src = self.ingestor.ingest(raw_bytes=self.raw_bytes, headers=hdrs_bad_src)
         self.assertEqual(st_bad_src, 422)
         self.assertFalse(body_bad_src["confirmed"])
+
+
+class TestCNNDatasetManagerBackend(unittest.TestCase):
+    """
+    Tests `/api/kelompok5/dataset` (`CNNDatasetService`) for single/bulk uploads
+    (JPG/PNG/WEBP), 4-class labels, magic-byte & corruption validation, FNV-1a
+    duplicate rejection, anti-Base64 enforcement, Vercel Blob + Firebase RTDB
+    persistence, label updates, and deletions with blob cleanup.
+    """
+
+    def setUp(self):
+        api_dir = os.path.join(os.path.dirname(__file__), "..", "api", "kelompok5")
+        if api_dir not in sys.path:
+            sys.path.insert(0, api_dir)
+        from capture import VercelBlobStorage, FirebaseRTDBStore, compute_fnv1a_hex
+        from dataset import CNNDatasetService
+
+        self.compute_fnv1a_hex = compute_fnv1a_hex
+        self.rtdb_transport = _InMemoryFirebaseTransport()
+        self.blob_transport = _InMemoryVercelBlobTransport()
+
+        self.rtdb_store = FirebaseRTDBStore(
+            db_url="https://mock-project.asia-southeast1.firebasedatabase.app",
+            auth_token="mock-db-secret",
+            urlopen_fn=self.rtdb_transport.urlopen,
+        )
+        self.blob_storage = VercelBlobStorage(
+            token="vercel_blob_rw_mock_token",
+            urlopen_fn=self.blob_transport.urlopen,
+        )
+        self.tmp_models = tempfile.TemporaryDirectory()
+        from scripts.cnn_inference_adapter import CNNInferenceAdapter
+        self.empty_adapter = CNNInferenceAdapter(models_dir=self.tmp_models.name, auto_load=True)
+        self.service = CNNDatasetService(
+            rtdb_store=self.rtdb_store,
+            blob_storage=self.blob_storage,
+            cnn_adapter=self.empty_adapter,
+            shared_token="test-dataset-secret-2026",
+            allow_local_fallback=False,
+        )
+
+    def tearDown(self):
+        if hasattr(self, "tmp_models"):
+            self.tmp_models.cleanup()
+
+    def _make_image_bytes(self, fmt="JPEG", color=(50, 180, 60), size=(320, 240)):
+        img = Image.new("RGB", size, color=(40, 30, 20))
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(img)
+        cx, cy = size[0] // 2, size[1] // 2
+        rx, ry = size[0] // 4, size[1] // 4
+        draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=color)
+        for offset in range(-rx + 10, rx - 10, 8):
+            draw.line([cx + offset, cy - ry + 15, cx + offset, cy + ry - 15], fill=(20, 140, 30), width=2)
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        return buf.getvalue()
+
+    def test_single_and_multi_format_upload_persistence_and_duplicate_rejection(self):
+        formats = [
+            ("JPEG", "siap_panen", "panen1.jpg", (45, 195, 55)),
+            ("PNG", "mendekati_panen", "mendekati1.png", (55, 185, 65)),
+            ("WEBP", "masa_pertumbuhan", "tumbuh1.webp", (65, 175, 75)),
+            ("JPEG", "bukan_selada", "pot_kosong.jpg", (120, 110, 100)),
+        ]
+        created_ids = []
+        for fmt, label, fname, col in formats:
+            raw = self._make_image_bytes(fmt=fmt, color=col)
+            fnv1a = self.compute_fnv1a_hex(raw)
+            hdrs = {
+                "Authorization": "Bearer test-dataset-secret-2026",
+                "X-Dataset-Label": label,
+                "X-File-Name": fname,
+                "X-File-Size": str(len(raw)),
+                "X-Checksum-FNV1A": fnv1a,
+                "X-HST-Day": "21",
+                "X-Notes": f"Sampel {label}",
+            }
+            code, res = self.service.upload_image(raw, hdrs)
+            self.assertEqual(code, 200, f"Upload failed for {fmt}/{label}: {res}")
+            self.assertTrue(res["ok"])
+            rec = res["record"]
+            created_ids.append(rec["dataset_id"])
+            self.assertEqual(rec["label"], label)
+            self.assertIsNone(rec["cnn_class"])
+            self.assertEqual(rec["cnn_status"], "BELUM ADA MODEL")
+            self.assertTrue(rec["image_url"].startswith("https://"))
+            self.assertFalse(rec["image_url"].startswith("data:"))
+            if label != "bukan_selada":
+                self.assertGreater(rec["leaf_width_px"], 0)
+            else:
+                self.assertEqual(rec["leaf_width_px"], 0)
+
+        # Verify all 4 records are persisted in Firebase RTDB and returned on list_records()
+        code_list, list_res = self.service.list_records()
+        self.assertEqual(code_list, 200)
+        self.assertEqual(list_res["count"], 4)
+        self.assertEqual(list_res["cnn_status"], "BELUM ADA MODEL")
+
+        # Duplicate upload of the first image must be rejected with HTTP 409
+        dup_raw = self._make_image_bytes(fmt="JPEG", color=(45, 195, 55))
+        code_dup, res_dup = self.service.upload_image(
+            dup_raw,
+            {
+                "Authorization": "Bearer test-dataset-secret-2026",
+                "X-Dataset-Label": "siap_panen",
+            },
+        )
+        self.assertEqual(code_dup, 409)
+        self.assertTrue(res_dup.get("duplicate"))
+
+    def test_security_auth_anti_base64_corrupt_and_label_update_delete(self):
+        raw_jpg = self._make_image_bytes(fmt="JPEG", color=(40, 190, 60))
+
+        # 1. Missing token -> 401, Wrong token -> 403
+        c401, _ = self.service.upload_image(raw_jpg, {"X-Dataset-Label": "siap_panen"})
+        self.assertEqual(c401, 401)
+        c403, _ = self.service.upload_image(
+            raw_jpg,
+            {"Authorization": "Bearer wrong-token", "X-Dataset-Label": "siap_panen"},
+        )
+        self.assertEqual(c403, 403)
+
+        # 2. Base64 data URI payload must be rejected with 422
+        b64_payload = b"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/" + (b"A" * 200)
+        c_b64, res_b64 = self.service.upload_image(
+            b64_payload,
+            {"Authorization": "Bearer test-dataset-secret-2026", "X-Dataset-Label": "siap_panen"},
+        )
+        self.assertEqual(c_b64, 422)
+        self.assertIn("Base64", res_b64["error"])
+
+        # 3. Corrupt JPEG bytes (valid magic bytes but garbage body) -> 422
+        corrupt_jpg = b"\xff\xd8\xff\xe0" + (b"\x00\xff\x12\x34" * 60)
+        c_corrupt, _ = self.service.upload_image(
+            corrupt_jpg,
+            {"Authorization": "Bearer test-dataset-secret-2026", "X-Dataset-Label": "siap_panen"},
+        )
+        self.assertEqual(c_corrupt, 422)
+
+        # 4. Upload valid record, update its label via update_record, then delete via delete_record
+        c_up, res_up = self.service.upload_image(
+            raw_jpg,
+            {"Authorization": "Bearer test-dataset-secret-2026", "X-Dataset-Label": "masa_pertumbuhan"},
+        )
+        self.assertEqual(c_up, 200)
+        ds_id = res_up["record"]["dataset_id"]
+
+        c_patch, res_patch = self.service.update_record(
+            {"dataset_id": ds_id, "label": "siap_panen", "notes": "Sudah siap panen hari ke-38"},
+            {"Authorization": "Bearer test-dataset-secret-2026"},
+        )
+        self.assertEqual(c_patch, 200)
+        self.assertEqual(res_patch["record"]["label"], "siap_panen")
+        self.assertEqual(res_patch["record"]["notes"], "Sudah siap panen hari ke-38")
+
+        c_del, res_del = self.service.delete_record(
+            ds_id,
+            {"Authorization": "Bearer test-dataset-secret-2026"},
+        )
+        self.assertEqual(c_del, 200)
+        self.assertEqual(res_del["deleted_id"], ds_id)
+        self.assertGreaterEqual(len(self.blob_transport.deleted_urls), 3)
+
+        # Verify record is gone from RTDB
+        _, after_list = self.service.list_records()
+        self.assertEqual(after_list["count"], 0)
+
+
+class TestExternalColabCNNInferenceAdapter(unittest.TestCase):
+    """
+    Tests external Google Colab CNN model validation (7 criteria), atomic rollback
+    preserving active model on failed import, preprocessing parity, and technical
+    test model (`is_test_model: True` -> `MODEL PENGUJIAN`) inference integration
+    across ESP32-CAM CV pipeline and CNNDatasetService.
+    """
+
+    def _build_valid_test_bundle(self, version="v1.0.0-colab-test", fmt="tflite", norm="rescale_0_1"):
+        # 3 kelas aktif output model_selada_v2.h5 (tanpa memaksakan 4 kelas dan tanpa mengubah urutan)
+        classes = ["siap_panen", "mendekati_panen", "masa_pertumbuhan"]
+        metadata = {
+            "model_id": "model_selada_v2",
+            "model_version": version,
+            "architecture": "MobileNetV2",
+            "format": fmt,
+            "training_source": "google_colab",
+            "exported_at": "2026-11-03T12:00:00Z",
+            "is_test_model": True,
+            "input_shape": [128, 128, 3],
+            "class_names": classes,
+            "preprocessing": {
+                "color_mode": "RGB",
+                "resize_mode": "bilinear",
+                "target_size": [128, 128],
+                "normalization": norm,
+            },
+            "notes": "MODEL PENGUJIAN TEKNIS (BUKAN MODEL PRODUKSI)",
+        }
+        evaluation = {
+            "accuracy": 0.935,
+            "precision_macro": 0.931,
+            "recall_macro": 0.928,
+            "f1_macro": 0.929,
+            "test_samples": 80,
+            "class_names": classes,
+            "confusion_matrix": [
+                [19, 1, 0],
+                [1, 18, 1],
+                [0, 1, 19],
+            ],
+        }
+        # Bobot proyeksi deterministik 6x3 untuk pengujian teknis inferensi 3 kelas aktif
+        weights = {
+            "kernel": [
+                [-0.5, 0.2, 0.3],
+                [2.8, 1.4, 0.6],
+                [-0.4, 0.1, 0.2],
+                [0.5, 0.2, -0.1],
+                [1.2, 0.5, 0.1],
+                [0.1, 0.1, 0.1],
+            ],
+            "bias": [0.4, 0.1, -0.1],
+        }
+        bundle = {
+            "class_names.json": json.dumps(classes).encode("utf-8"),
+            "metadata.json": json.dumps(metadata).encode("utf-8"),
+            "evaluation.json": json.dumps(evaluation).encode("utf-8"),
+        }
+        if fmt == "tflite":
+            header = b"\x1c\x00\x00\x00TFL3\x00\x00\x12\x00\x1c\x00\x04\x00\x08\x00\x0c\x00\x10\x00\x14\x00\x00\x00\x18\x00\x12\x00\x00\x00"
+            trailer = b"__SELADA_PORTABLE_WEIGHTS_JSON__:" + json.dumps(weights).encode("utf-8")
+            bundle["model.tflite"] = header + trailer
+        elif fmt == "h5":
+            header = b"\x89HDF\r\n\x1a\n\x00\x00\x00\x00\x00\x00\x00\x00"
+            trailer = b"__SELADA_PORTABLE_WEIGHTS_JSON__:" + json.dumps(weights).encode("utf-8")
+            bundle["model_selada_v2.h5"] = header + trailer
+        else:
+            import zipfile
+            zbuf = io.BytesIO()
+            with zipfile.ZipFile(zbuf, "w") as zf:
+                zf.writestr(
+                    "config.json",
+                    json.dumps({"class_name": "Functional", "input_shape": [128, 128, 3]}),
+                )
+                zf.writestr("portable_weights.json", json.dumps(weights))
+            bundle["model.keras"] = zbuf.getvalue()
+        return bundle
+
+    def test_default_fallback_and_7_layer_validation_and_atomic_rollback(self):
+        from scripts.cnn_inference_adapter import CNNInferenceAdapter, preprocess_image_tensor
+
+        with tempfile.TemporaryDirectory() as empty_dir:
+            adapter = CNNInferenceAdapter(models_dir=empty_dir, auto_load=True)
+            self.assertFalse(adapter.is_ready)
+            self.assertEqual(adapter.status, "BELUM ADA MODEL")
+
+            # Fallback prediction when no model is installed must NEVER fabricate results
+            sample_img = Image.new("RGB", (200, 200), color=(45, 185, 55))
+            pred_empty = adapter.predict(sample_img, leaf_width_px=142)
+            self.assertEqual(pred_empty["cnn_status"], "BELUM ADA MODEL")
+            self.assertIsNone(pred_empty["cnn_class"])
+            self.assertIsNone(pred_empty["cnn_confidence"])
+            self.assertIsNone(pred_empty["model_version"])
+
+            # 1. Reject incomplete bundle (missing evaluation.json)
+            b_missing = self._build_valid_test_bundle()
+            b_missing.pop("evaluation.json")
+            res_missing = adapter.register_model_bundle(b_missing)
+            self.assertFalse(res_missing["ok"])
+            self.assertEqual(res_missing["stage"], "files")
+            self.assertEqual(adapter.status, "BELUM ADA MODEL")
+
+            # 2. Reject forced 4-class validation or wrong classes
+            b_four = self._build_valid_test_bundle()
+            b_four["class_names.json"] = json.dumps(["siap_panen", "mendekati_panen", "masa_pertumbuhan", "bukan_selada"]).encode("utf-8")
+            res_four = adapter.register_model_bundle(b_four)
+            self.assertFalse(res_four["ok"])
+            self.assertEqual(res_four["stage"], "classes")
+
+            b_wrong_cls = self._build_valid_test_bundle()
+            b_wrong_cls["class_names.json"] = json.dumps(["siap_panen", "mendekati_panen", "bayam"]).encode("utf-8")
+            res_cls = adapter.register_model_bundle(b_wrong_cls)
+            self.assertFalse(res_cls["ok"])
+            self.assertEqual(res_cls["stage"], "classes")
+
+            # 3. Reject mismatched label order between class_names.json and metadata.json
+            b_order = self._build_valid_test_bundle()
+            b_order["class_names.json"] = json.dumps(["mendekati_panen", "siap_panen", "masa_pertumbuhan"]).encode("utf-8")
+            res_order = adapter.register_model_bundle(b_order)
+            self.assertFalse(res_order["ok"])
+            self.assertEqual(res_order["stage"], "label_order")
+
+            # 4. Reject invalid input_shape
+            b_shape = self._build_valid_test_bundle()
+            m_shape = json.loads(b_shape["metadata.json"].decode("utf-8"))
+            m_shape["input_shape"] = [32, 32, 1]
+            b_shape["metadata.json"] = json.dumps(m_shape).encode("utf-8")
+            res_shape = adapter.register_model_bundle(b_shape)
+            self.assertFalse(res_shape["ok"])
+            self.assertEqual(res_shape["stage"], "input_shape")
+
+            # 5. Reject unsupported normalization
+            b_norm = self._build_valid_test_bundle()
+            m_norm = json.loads(b_norm["metadata.json"].decode("utf-8"))
+            m_norm["preprocessing"]["normalization"] = "unknown_norm_xyz"
+            b_norm["metadata.json"] = json.dumps(m_norm).encode("utf-8")
+            res_norm = adapter.register_model_bundle(b_norm)
+            self.assertFalse(res_norm["ok"])
+            self.assertEqual(res_norm["stage"], "normalization")
+
+            # 6. Activate valid technical test model_selada_v2.h5 (format h5, marked MODEL PENGUJIAN)
+            valid_h5 = self._build_valid_test_bundle(version="v2.0.0-h5-test", fmt="h5")
+            res_h5 = adapter.register_model_bundle(valid_h5)
+            self.assertTrue(res_h5["ok"], f"Expected valid model_selada_v2.h5 registration: {res_h5}")
+            self.assertEqual(adapter.status, "MODEL PENGUJIAN")
+            self.assertEqual(adapter.get_status_dict()["model_version"], "v2.0.0-h5-test")
+            self.assertEqual(adapter.get_status_dict()["binary_file"], "model_selada_v2.h5")
+            self.assertTrue(adapter.get_status_dict()["is_test_model"])
+            self.assertEqual(adapter.get_status_dict()["unavailable_classes"], {"bukan_selada": "BELUM TERSEDIA"})
+
+            # 7. Atomic Rollback Test: attempt to import corrupt binary -> must fail AND keep v2.0.0-h5-test active!
+            b_corrupt = self._build_valid_test_bundle(version="v2.1.0-broken", fmt="tflite")
+            b_corrupt["model.tflite"] = b"NOT_A_VALID_TFLITE_BINARY_FILE_HEADER_0000"
+            res_corrupt = adapter.register_model_bundle(b_corrupt)
+            self.assertFalse(res_corrupt["ok"])
+            self.assertTrue(res_corrupt["rolled_back_to_previous"])
+            self.assertTrue(adapter.is_ready)
+            self.assertEqual(adapter.get_status_dict()["model_version"], "v2.0.0-h5-test")
+
+            # 8. Also verify valid .keras archive model registration & inference
+            valid_keras = self._build_valid_test_bundle(version="v1.2.0-keras-test", fmt="keras", norm="mobilenet_v2_-1_1")
+            res_keras = adapter.register_model_bundle(valid_keras)
+            self.assertTrue(res_keras["ok"], f"Expected valid keras registration: {res_keras}")
+            self.assertEqual(adapter.get_status_dict()["model_version"], "v1.2.0-keras-test")
+
+            pred_active = adapter.predict(sample_img, leaf_width_px=155, timestamp_ms=1775266200000)
+            self.assertEqual(pred_active["cnn_status"], "MODEL PENGUJIAN")
+            self.assertIn(pred_active["cnn_class"], ["siap_panen", "mendekati_panen", "masa_pertumbuhan"])
+            self.assertNotEqual(pred_active["cnn_class"], "bukan_selada")
+            self.assertNotIn("bukan_selada", pred_active["cnn_probabilities"])
+            self.assertIsNotNone(pred_active["cnn_confidence"])
+            self.assertGreater(pred_active["cnn_confidence"], 0.0)
+            self.assertEqual(pred_active["model_version"], "v1.2.0-keras-test")
+            self.assertEqual(pred_active["classified_at"], 1775266200000)
+            self.assertTrue(pred_active["is_test_model"])
+
+            # 9. Verify preprocessing parity across all supported normalization modes
+            t01 = preprocess_image_tensor(sample_img, [128, 128, 3], {"color_mode": "RGB", "resize_mode": "bilinear", "normalization": "rescale_0_1"})
+            self.assertEqual(t01.shape, (1, 128, 128, 3))
+            self.assertTrue(np.all((t01 >= 0.0) & (t01 <= 1.0)))
+
+            tmob = preprocess_image_tensor(sample_img, [128, 128, 3], {"color_mode": "RGB", "resize_mode": "bilinear", "normalization": "mobilenet_v2_-1_1"})
+            self.assertTrue(np.all((tmob >= -1.0) & (tmob <= 1.0)))
+
+    def test_cv_pipeline_and_dataset_integration_with_test_model(self):
+        from scripts.cnn_inference_adapter import CNNInferenceAdapter
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            adapter = CNNInferenceAdapter(models_dir=tmp_dir, auto_load=False)
+            adapter.register_model_bundle(self._build_valid_test_bundle(version="v1.3.0-test", fmt="h5"))
+
+            pipeline = LettuceCVPipeline(
+                output_dir=os.path.join(tmp_dir, "imgs"),
+                meta_file=os.path.join(tmp_dir, "meta.json"),
+                cnn_adapter=adapter,
+            )
+            img = Image.new("RGB", (320, 240), color=(40, 30, 20))
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([80, 50, 240, 190], fill=(45, 200, 55))
+            for x in range(95, 225, 10):
+                draw.line([x, 65, x, 175], fill=(20, 140, 30), width=2)
+
+            rec = pipeline.process_image(img, plant_id="SLD-01", hst_day=28, timestamp=1775266200000)
+            self.assertEqual(rec["quality_status"], "VALID")
+            self.assertGreater(rec["leaf_width_px"], 0)
+            self.assertEqual(rec["cnn_status"], "MODEL PENGUJIAN")
+            self.assertEqual(rec["model_version"], "v1.3.0-test")
+            self.assertTrue(rec["is_test_model"])
+            self.assertIn(rec["cnn_class"], ["siap_panen", "mendekati_panen", "masa_pertumbuhan"])
+            self.assertNotEqual(rec["cnn_class"], "bukan_selada")
+            self.assertIsNotNone(rec["cnn_confidence"])
+            self.assertEqual(rec["classified_at"], 1775266200000)
+            self.assertIsNotNone(rec["cnn_confidence"])
+            self.assertEqual(rec["classified_at"], 1775266200000)
+
 
 
 if __name__ == "__main__":
