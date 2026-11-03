@@ -20,6 +20,7 @@ import sys
 import json
 import time
 import math
+import tempfile
 import threading
 from datetime import datetime, timezone, timedelta
 import numpy as np
@@ -40,18 +41,20 @@ MAX_BRIGHTNESS = 238.0  # Above this = overexposed / bleached
 MIN_LAPLACIAN_VAR = 30.0 # Below this = heavily blurred / defocused
 
 class LettuceCVPipeline:
-    def __init__(self, output_dir="data/growth_images", meta_file="data/growth_metadata.json", calib_factor_mm_per_px=None):
+    def __init__(self, output_dir="data/growth_images", meta_file="data/growth_metadata.json", calib_factor_mm_per_px=None, use_tmp_only=False):
         self.output_dir = output_dir
         self.meta_file = meta_file
         self.calib_factor = calib_factor_mm_per_px # None if uncalibrated
+        self.use_tmp_only = bool(use_tmp_only)
         self.algo_version = "v1.2-exg-otsu"
         self._meta_lock = threading.Lock()
 
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(os.path.dirname(self.meta_file) if os.path.dirname(self.meta_file) else ".", exist_ok=True)
-        if not os.path.exists(self.meta_file):
-            with open(self.meta_file, "w") as f:
-                json.dump([], f)
+        if not self.use_tmp_only:
+            os.makedirs(self.output_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(self.meta_file) if os.path.dirname(self.meta_file) else ".", exist_ok=True)
+            if not os.path.exists(self.meta_file):
+                with open(self.meta_file, "w") as f:
+                    json.dump([], f)
 
     def validate_quality(self, np_img):
         """
@@ -191,7 +194,7 @@ class LettuceCVPipeline:
 
         return overlay.convert("RGB")
 
-    def process_image(self, input_image, plant_id="SLD-01", hst_day=1, timestamp=None, camera_id="ESP32-CAM-01"):
+    def process_image(self, input_image, plant_id="SLD-01", hst_day=1, timestamp=None, camera_id="ESP32-CAM-01", image_id_override=None, artifact_uploader=None):
         """
         Full end-to-end processing execution.
         input_image: PIL.Image or path string.
@@ -204,7 +207,7 @@ class LettuceCVPipeline:
         now_ts = timestamp if timestamp else int(time.time() * 1000)
         dt_wib = datetime.fromtimestamp(now_ts / 1000, tz=WIB_TIMEZONE)
         time_wib_str = dt_wib.strftime("%Y-%m-%d %H:%M:%S WIB")
-        image_id = f"img_{dt_wib.strftime('%Y%m%d_%H%M%S')}"
+        image_id = image_id_override if image_id_override else f"img_{dt_wib.strftime('%Y%m%d_%H%M%S')}"
 
         np_img = np.array(pil_img)
 
@@ -240,14 +243,50 @@ class LettuceCVPipeline:
             cropped_pil, mask, measurements["bbox"], measurements["contour_pts"]
         )
 
-        # 5. File Persistence
-        orig_rel_path = f"{self.output_dir}/{image_id}_orig.jpg"
-        mask_rel_path = f"{self.output_dir}/{image_id}_mask.png"
-        overlay_rel_path = f"{self.output_dir}/{image_id}_overlay.jpg"
+        # 5. File Persistence (Ephemeral /tmp scratch in serverless mode vs local disk)
+        orig_filename = f"{image_id}_orig.jpg"
+        mask_filename = f"{image_id}_mask.png"
+        overlay_filename = f"{image_id}_overlay.jpg"
 
-        cropped_pil.save(orig_rel_path, format="JPEG", quality=88)
-        silhouette_pil.save(mask_rel_path, format="PNG")
-        overlay_pil.save(overlay_rel_path, format="JPEG", quality=88)
+        if self.use_tmp_only:
+            if not callable(artifact_uploader):
+                raise ValueError("artifact_uploader callback is required when use_tmp_only=True")
+            tmp_base = "/tmp" if os.path.isdir("/tmp") else None
+            with tempfile.TemporaryDirectory(dir=tmp_base, prefix="selada_cv_") as tmp_dir:
+                tmp_orig = os.path.join(tmp_dir, orig_filename)
+                tmp_mask = os.path.join(tmp_dir, mask_filename)
+                tmp_overlay = os.path.join(tmp_dir, overlay_filename)
+
+                cropped_pil.save(tmp_orig, format="JPEG", quality=88)
+                silhouette_pil.save(tmp_mask, format="PNG")
+                overlay_pil.save(tmp_overlay, format="JPEG", quality=88)
+
+                with open(tmp_orig, "rb") as f:
+                    orig_bytes = f.read()
+                with open(tmp_mask, "rb") as f:
+                    mask_bytes = f.read()
+                with open(tmp_overlay, "rb") as f:
+                    overlay_bytes = f.read()
+
+                uploaded_urls = artifact_uploader(
+                    image_id,
+                    {
+                        "orig": (orig_filename, orig_bytes, "image/jpeg"),
+                        "mask": (mask_filename, mask_bytes, "image/png"),
+                        "overlay": (overlay_filename, overlay_bytes, "image/jpeg"),
+                    },
+                )
+                orig_rel_path = uploaded_urls["image_url"]
+                mask_rel_path = uploaded_urls["mask_url"]
+                overlay_rel_path = uploaded_urls["overlay_url"]
+        else:
+            orig_rel_path = f"{self.output_dir}/{orig_filename}"
+            mask_rel_path = f"{self.output_dir}/{mask_filename}"
+            overlay_rel_path = f"{self.output_dir}/{overlay_filename}"
+
+            cropped_pil.save(orig_rel_path, format="JPEG", quality=88)
+            silhouette_pil.save(mask_rel_path, format="PNG")
+            overlay_pil.save(overlay_rel_path, format="JPEG", quality=88)
 
         # 6. Physical Calibration Translation
         leaf_width_mm = None
@@ -277,7 +316,8 @@ class LettuceCVPipeline:
             "overlay_url": overlay_rel_path
         }
 
-        self._append_metadata(record)
+        if not self.use_tmp_only:
+            self._append_metadata(record)
         return record
 
     def _append_metadata(self, record):

@@ -1295,9 +1295,107 @@ try {
 }
 
 // ------------------------------------------------------------------------------
-// TEST SUITE 26: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// TEST SUITE 26: VERCEL SERVERLESS FUNCTION PHASE 1 ADAPTER (/api/kelompok5/capture)
 // ------------------------------------------------------------------------------
-console.log(`\n${C.bold}--- [26] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
+console.log(`\n${C.bold}--- [26] Vercel Serverless Function Phase 1 Adapter (POST /api/kelompok5/capture) ---${C.reset}`);
+
+try {
+    const reqTxtPath = path.join(rootDir, 'requirements.txt');
+    const vercelJsonPath = path.join(rootDir, 'vercel.json');
+    const pyVersionPath = path.join(rootDir, '.python-version');
+    const captureApiPath = path.join(rootDir, 'api/kelompok5/capture.py');
+    const cvPipelinePath = path.join(rootDir, 'scripts/growth_cv_pipeline.py');
+
+    const reqTxt = fs.existsSync(reqTxtPath) ? fs.readFileSync(reqTxtPath, 'utf8') : '';
+    const vercelJson = fs.existsSync(vercelJsonPath) ? fs.readFileSync(vercelJsonPath, 'utf8') : '';
+    const pyVersion = fs.existsSync(pyVersionPath) ? fs.readFileSync(pyVersionPath, 'utf8').trim() : '';
+    const captureApi = fs.existsSync(captureApiPath) ? fs.readFileSync(captureApiPath, 'utf8') : '';
+    const cvPipeline = fs.existsSync(cvPipelinePath) ? fs.readFileSync(cvPipelinePath, 'utf8') : '';
+
+    // 1. requirements.txt, vercel.json, .python-version & Vercel Python Handler Contract
+    const hasRequirements = reqTxt.includes('numpy') && reqTxt.includes('Pillow');
+    const hasVercelCfg = vercelJson.includes('api/kelompok5/capture.py') &&
+        vercelJson.includes('maxDuration') &&
+        vercelJson.includes('excludeFiles') &&
+        pyVersion === '3.12';
+    const hasVercelHandler = captureApi.includes('class handler(BaseHTTPRequestHandler):') &&
+        !captureApi.includes('import ThreadingHTTPServer') &&
+        !captureApi.includes('ThreadingHTTPServer(');
+    if (hasRequirements && hasVercelCfg && hasVercelHandler) {
+        pass('Vercel-Serverless-Entrypoint', 'requirements.txt, vercel.json, .python-version (3.12), and stateless class handler(BaseHTTPRequestHandler) verified without ThreadingHTTPServer');
+    } else {
+        fail('Vercel-Serverless-Entrypoint', 'Missing requirements.txt, vercel.json, .python-version, or invalid handler(BaseHTTPRequestHandler) in api/kelompok5/capture.py');
+    }
+
+    // 2. ESP32-CAM Header, Calendar/Schedule Window, Pixel Bounds & 4.5MB Limit
+    const hasEsp32Contract = captureApi.includes('MAX_PAYLOAD_BYTES = 4_500_000') &&
+        captureApi.includes('MAX_IMAGE_PIXELS') &&
+        captureApi.includes('parse_and_validate_slot_key') &&
+        captureApi.includes('X-Slot-Key') &&
+        captureApi.includes('X-Captured-At') &&
+        captureApi.includes('X-HST-Day') &&
+        captureApi.includes('X-File-Size') &&
+        captureApi.includes('X-Checksum-FNV1A') &&
+        captureApi.includes('2166136261') &&
+        captureApi.includes('16777619');
+    if (hasEsp32Contract) {
+        pass('Vercel-ESP32-Contract', 'Serverless adapter enforces mandatory ESP32-CAM headers, calendar/WIB window, pixel bounds (<=1600x1200), FNV-1a checksum, and 4.5MB limit');
+    } else {
+        fail('Vercel-ESP32-Contract', 'Missing ESP32-CAM header/calendar/pixel validations or 4.5MB limit in api/kelompok5/capture.py');
+    }
+
+    // 3. Ephemeral /tmp CV Storage & Idempotent Vercel Blob Integration (x-allow-overwrite + delete_blobs)
+    const hasTmpAndBlob = cvPipeline.includes('use_tmp_only') &&
+        cvPipeline.includes('tempfile.TemporaryDirectory') &&
+        !cvPipeline.includes('blob://growth_images/') &&
+        captureApi.includes('VercelBlobStorage') &&
+        captureApi.includes('BLOB_READ_WRITE_TOKEN') &&
+        captureApi.includes('"x-allow-overwrite": "1"') &&
+        captureApi.includes('def delete_blobs') &&
+        captureApi.includes('use_tmp_only=True');
+    if (hasTmpAndBlob) {
+        pass('Vercel-Blob-And-Tmp-CV', 'CV pipeline uses ephemeral /tmp scratch directory and uploads idempotently to Vercel Blob (x-allow-overwrite: 1) with fenced partial cleanup');
+    } else {
+        fail('Vercel-Blob-And-Tmp-CV', 'Missing /tmp ephemeral mode, x-allow-overwrite: 1, or delete_blobs in VercelBlobStorage');
+    }
+
+    // 4. Firebase RTDB Mandatory ETag CAS, Owner ID + Monotonic Fencing Token & Fenced Rollback
+    const hasAtomicRtdb = captureApi.includes('FirebaseRTDBStore') &&
+        captureApi.includes('FIREBASE_RTDB_URL') &&
+        captureApi.includes('X-Firebase-ETag') &&
+        captureApi.includes('If-Match') &&
+        captureApi.includes('MissingETagError') &&
+        captureApi.includes('StaleLockOwnerError') &&
+        captureApi.includes('owner_id') &&
+        captureApi.includes('fence_token') &&
+        captureApi.includes('claim_slot') &&
+        captureApi.includes('commit_slot_and_metadata') &&
+        captureApi.includes('release_failed_slot');
+    if (hasAtomicRtdb) {
+        pass('Firebase-RTDB-Atomic-Slot', 'Firebase RTDB mandatory ETag CAS, owner_id + fence_token verification, and fenced rollback recovery verified');
+    } else {
+        fail('Firebase-RTDB-Atomic-Slot', 'Missing Firebase RTDB mandatory ETag CAS, fencing token, or fenced rollback');
+    }
+
+    // 5. Fail-Closed CAPTURE_SHARED_TOKEN Authentication (503 when empty, 401 when invalid)
+    const hasSharedTokenAuth = captureApi.includes('CAPTURE_SHARED_TOKEN') &&
+        captureApi.includes('hmac.compare_digest') &&
+        captureApi.includes('X-Capture-Token') &&
+        captureApi.includes('503') &&
+        captureApi.includes('401');
+    if (hasSharedTokenAuth) {
+        pass('Serverless-Capture-Auth', 'Fail-closed endpoint authentication via CAPTURE_SHARED_TOKEN (503 when unconfigured, 401 when invalid) with hmac.compare_digest verified');
+    } else {
+        fail('Serverless-Capture-Auth', 'Missing fail-closed CAPTURE_SHARED_TOKEN authentication in api/kelompok5/capture.py');
+    }
+} catch (e) {
+    fail('Vercel-Serverless-Audit', 'Unexpected error in Suite 26', e.message);
+}
+
+// ------------------------------------------------------------------------------
+// TEST SUITE 27: HARDWARE & PRODUCTION-BOUND VERIFICATIONS (MARKED NOT TESTED)
+// ------------------------------------------------------------------------------
+console.log(`\n${C.bold}--- [27] Physical Hardware & Production Cloud Verifications (NOT TESTED IN SOFTWARE) ---${C.reset}`);
 
 notTested(
     'Hardware-IoT',
@@ -1319,8 +1417,14 @@ notTested(
 
 notTested(
     'Production-Cloud',
-    'Firebase RTDB Asia-Southeast1 Production Write Access',
-    'Requires production Firebase service account credentials / authenticated write token to verify live RTDB push'
+    'Firebase RTDB Asia-Southeast1 / Emulator Live ETag CAS & Write Access',
+    'Requires live FIREBASE_RTDB_URL (Firebase Emulator or staging RTDB) and authenticated credentials (run tests/test_vercel_cloud_integration.py)'
+);
+
+notTested(
+    'Production-Cloud',
+    'Vercel Blob Staging Store Live PUT Overwrite & Delete API',
+    'Requires live BLOB_READ_WRITE_TOKEN staging store credentials (run tests/test_vercel_cloud_integration.py)'
 );
 
 // ------------------------------------------------------------------------------

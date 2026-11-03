@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["sin1"],
+  "functions": {
+    "api/kelompok5/capture.py": {
+      "maxDuration": 15,
+      "excludeFiles": "{tests,firmware,data}/**"
+    }
+  }
+}
